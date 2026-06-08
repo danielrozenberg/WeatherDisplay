@@ -233,7 +233,7 @@ setup_config() {
 # --------------------------------------------------------------------------- #
 check_pisugar() {
   info "Checking PiSugar power-manager server"
-  if (exec 3<>/dev/tcp/127.0.0.1/8423) 2>/dev/null; then
+  if timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8423' 2>/dev/null; then
     ok "pisugar-server is reachable on 127.0.0.1:8423"
   else
     warn "pisugar-server not reachable on :8423 (scheduled wake-up needs it)"
