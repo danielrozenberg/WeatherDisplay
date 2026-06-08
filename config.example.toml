@@ -1,0 +1,53 @@
+# WeatherDisplay configuration (flat TOML).
+#
+# Copy this file to `config.toml` (install.sh does this for you) and edit the
+# values below. All keys live at the top level — there are no sections/tables.
+
+# --- Location -------------------------------------------------------------- #
+# Coordinates of the place you want the forecast for. Find yours at
+# https://www.openstreetmap.org (right-click → "show address") or any maps app.
+latitude = 51.5074
+longitude = -0.1278
+
+# IANA timezone name, e.g. "Europe/London", "America/Toronto", "America/New_York".
+# Used for sunrise/sunset, the hourly chart, and the "last updated" stamp.
+timezone = "Europe/London"
+
+# --- Display ---------------------------------------------------------------- #
+# Which unit is shown large/primary. The other is always shown smaller/muted.
+#   "metric"   -> °C primary, °F muted
+#   "imperial" -> °F primary, °C muted
+primary_unit = "metric"
+
+# Inky Spectra-6 colour saturation, 0.0 (muted) .. 1.0 (vivid). 0.5 is a good
+# default. The dev-mode e-ink preview uses this exact value too.
+saturation = 0.5
+
+# Number of hourly points in the temperature/precipitation bar chart (1..48).
+chart_hours = 16
+
+# Number of day chips in the multi-day strip (1..16).
+day_chips = 10
+
+# --- Power / scheduling ----------------------------------------------------- #
+# How often the device wakes, updates, and shuts down again (hours).
+wake_interval_hours = 4
+
+# When true, the `update` job powers the Pi off after refreshing the screen
+# (the PiSugar RTC then wakes it again after wake_interval_hours).
+# Set to false (or `touch /boot/weatherdisplay-stayawake`) to keep the Pi on
+# for maintenance / SSH access.
+auto_shutdown = true
+
+# --- PiSugar power manager -------------------------------------------------- #
+# The pisugar-server TCP endpoint. Defaults are correct for a standard install.
+pisugar_host = "127.0.0.1"
+pisugar_port = 8423
+
+# --- Dev / logging ---------------------------------------------------------- #
+# Port for `weatherdisplay dev` (the local design-preview web server).
+dev_port = 8080
+
+# Verbose (DEBUG-level) logging. Read logs on the Pi with:
+#   journalctl -u weatherdisplay
+verbose = false

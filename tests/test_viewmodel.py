@@ -1,0 +1,104 @@
+"""Tests for the presentation/view-model layer."""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime
+
+from weatherdisplay import config as config_lib
+from weatherdisplay import pisugar
+from weatherdisplay import viewmodel
+from weatherdisplay import weather
+
+
+def _report(cfg: config_lib.Config, n_hours: int = 4) -> weather.WeatherReport:
+    now = datetime.datetime(2026, 6, 6, 14, 0, tzinfo=cfg.tzinfo)
+    hours = [
+        weather.HourPoint(
+            time=now + datetime.timedelta(hours=i),
+            temperature_c=10.0 + i,
+            precipitation_probability=10 * i,
+        )
+        for i in range(n_hours)
+    ]
+    days = [
+        weather.DayChip(
+            day=now.date() + datetime.timedelta(days=i),
+            weather_code=0,
+            temp_min_c=8.0,
+            temp_max_c=18.0,
+            precipitation_probability=25,
+        )
+        for i in range(3)
+    ]
+    return weather.WeatherReport(
+        fetched_at=now,
+        temperature_c=14.0,
+        humidity=60,
+        uv_index=5.0,
+        weather_code=0,
+        is_day=True,
+        sunrise=now.replace(hour=4, minute=45),
+        sunset=now.replace(hour=21, minute=14),
+        hours=hours,
+        days=days,
+    )
+
+
+def test_header_metric(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    assert view.header.temp_primary == "14"
+    assert view.header.unit_primary == "C"
+    assert view.header.temp_secondary == "57°F"
+    assert view.header.uv_label == "Moderate"
+
+
+def test_header_imperial(cfg: config_lib.Config) -> None:
+    cfg = dataclasses.replace(cfg, primary_unit="imperial")
+    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    assert view.header.unit_primary == "F"
+    assert view.header.temp_primary == "57"
+    assert view.header.temp_secondary == "14°C"
+
+
+def test_first_chip_is_today(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    assert view.chips[0].label == "Today"
+    assert view.chips[1].label != "Today"
+
+
+def test_battery_none_is_low(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    assert view.battery_low is True
+    assert view.battery_pct == 0
+
+
+def test_battery_passthrough(cfg: config_lib.Config) -> None:
+    battery = pisugar.BatteryStatus(percent=80.0, plugged=False)
+    view = viewmodel.build_view(_report(cfg), battery, cfg, static_base="/s")
+    assert view.battery_pct == 80
+    assert view.battery_low is False
+
+
+def test_static_base_trailing_slash_stripped(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s/")
+    assert view.static_base == "/s"
+
+
+def test_chart_geometry_within_bounds(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(
+        _report(cfg, n_hours=4), None, cfg, static_base="/s"
+    )
+    assert len(view.chart.bars) == 4
+    for bar in view.chart.bars:
+        assert 0 <= bar.x <= viewmodel.CHART_W
+        assert viewmodel._TEMP_TOP <= bar.temp_y <= viewmodel._TEMP_BOTTOM
+        assert bar.precip_h >= 0
+    assert view.chart.temp_points.count(",") == 4
+
+
+def test_empty_chart_is_safe(cfg: config_lib.Config) -> None:
+    report = dataclasses.replace(_report(cfg), hours=[])
+    view = viewmodel.build_view(report, None, cfg, static_base="/s")
+    assert view.chart.bars == []
+    assert view.chart.temp_points == ""

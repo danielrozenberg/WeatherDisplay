@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.claude/
+.ruff_cache/
+.pytest_cache/
+.pyrefly_cache/
+.mypy_cache/
+
+# Local config & runtime state (never commit secrets / coordinates)
+config.toml
+state/
+preview/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

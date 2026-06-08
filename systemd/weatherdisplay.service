@@ -1,0 +1,30 @@
+# WeatherDisplay update service.
+#
+# This is a template: install.sh substitutes the @TOKENS@ with absolute paths
+# and installs the result to /etc/systemd/system/weatherdisplay.service.
+#
+# The PiSugar RTC powers the Pi on; systemd then runs this oneshot job once per
+# boot. The job fetches the weather, updates the panel, schedules the next
+# wake-up and powers the Pi off again. Logs go to the journal:
+#   journalctl -u weatherdisplay
+
+[Unit]
+Description=WeatherDisplay e-ink weather update
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=@INSTALL_DIR@
+Environment=WEATHERDISPLAY_STATE=@STATE_DIR@
+# Use the system Chromium (installed via apt) for the screenshot.
+Environment=WEATHERDISPLAY_CHROMIUM=@CHROMIUM@
+ExecStart=@VENV@/bin/weatherdisplay --config @CONFIG@ update
+# Give the one-shot render plenty of time on the slow Pi Zero 2 W.
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

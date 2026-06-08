@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weatherdisplay"
+version = "0.1.0"
+description = "Battery-powered e-ink weather display for Raspberry Pi (Inky Impression 7.3\" + PiSugar 3)"
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "ISC" }
+authors = [{ name = "Daniel Rozenberg" }]
+
+dependencies = [
+    # Open-Meteo is queried via its documented JSON API using a cached,
+    # auto-retrying requests session (no heavyweight flatbuffers/numpy client).
+    "requests>=2.32",
+    "requests-cache>=1.2",
+    "retry-requests>=2.0",
+    "jinja2>=3.1",
+    "playwright>=1.50",
+    "pillow>=12.0",
+    "flask>=3.1",
+    "livereload>=2.7",
+]
+
+[project.optional-dependencies]
+# Hardware-only deps. Installed on the Raspberry Pi (`pip install .[pi]`); not
+# needed on a dev machine, which has no SPI/GPIO.
+pi = ["inky==2.3.0"]
+# Linting, type-checking and tests.
+dev = ["ruff>=0.9", "pyrefly>=1.0", "pytest>=8.0", "types-requests>=2.32"]
+
+[project.scripts]
+weatherdisplay = "weatherdisplay.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weatherdisplay"]
+
+# Ship the Jinja templates and static assets inside the wheel.
+[tool.hatch.build.targets.wheel.force-include]
+"src/weatherdisplay/templates" = "weatherdisplay/templates"
+"src/weatherdisplay/static" = "weatherdisplay/static"
+
+# --------------------------------------------------------------------------- #
+# Tooling
+# --------------------------------------------------------------------------- #
+
+# Configured to follow the Google Python Style Guide
+# (https://google.github.io/styleguide/pyguide.html): 80-column lines,
+# module-only imports, Google-style docstrings, and PEP8 naming.
+[tool.ruff]
+target-version = "py314"
+line-length = 80
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "PTH",  # use pathlib
+    "N",    # pep8-naming
+    "D",    # pydocstyle (Google docstring convention, below)
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+# One import per line (no `from x import a, b`); keeps imports easy to diff.
+# `typing` and `collections.abc` are exempt — grouping their names is idiomatic.
+force-single-line = true
+single-line-exclusions = ["typing", "collections.abc"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests don't need module-import purity or Google docstrings on every function.
+"tests/**" = ["D", "N"]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+python-version = "3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
