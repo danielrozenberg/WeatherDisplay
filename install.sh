@@ -161,7 +161,27 @@ ensure_swap() {
       || die "could not enable swap" "run 'sudo dphys-swapfile setup && sudo dphys-swapfile swapon'"
     ok "swap raised to 1024 MB"
   else
-    warn "no dphys-swapfile found; create ~1 GB of swap manually to avoid Chromium OOM"
+    # Newer Pi OS images ship zram-only swap and no dphys-swapfile. Fall back
+    # to a plain 1 GB /swapfile. Idempotent: reuse one that already exists and
+    # only append the fstab entry once.
+    local swapfile=/swapfile
+    info "  no dphys-swapfile; ensuring a 1 GB ${swapfile}"
+    if ! swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$swapfile"; then
+      if [[ ! -e "$swapfile" ]]; then
+        sudo fallocate -l 1G "$swapfile" \
+          || sudo dd if=/dev/zero of="$swapfile" bs=1M count=1024 status=none \
+          || die "could not allocate ${swapfile}" "free up ~1 GB of disk and re-run ./install.sh"
+        sudo chmod 600 "$swapfile"
+        sudo mkswap "$swapfile" >/dev/null \
+          || die "mkswap failed on ${swapfile}" "run 'sudo rm ${swapfile}' and re-run ./install.sh"
+      fi
+      sudo swapon "$swapfile" \
+        || die "could not enable ${swapfile}" "run 'sudo swapon ${swapfile}'"
+    fi
+    if ! grep -qE "^[[:space:]]*${swapfile}[[:space:]]" /etc/fstab 2>/dev/null; then
+      echo "${swapfile} none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+    fi
+    ok "swap file active at ${swapfile} (1024 MB)"
   fi
 }
 
