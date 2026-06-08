@@ -25,7 +25,7 @@ MIN_SWAP_KB=900000  # ~900 MB; Chromium needs headroom on the 512 MB Pi Zero 2 W
 
 # pyenv "suggested build environment" + our runtime needs.
 APT_PACKAGES=(
-  chromium-browser fonts-dejavu-core
+  chromium fonts-dejavu-core
   make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev
   libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev
   libffi-dev liblzma-dev libgdbm-dev libnss3-dev uuid-dev git curl
