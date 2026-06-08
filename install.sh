@@ -24,8 +24,9 @@ PYENV_ROOT="${PYENV_ROOT:-${HOME}/.pyenv}"
 MIN_SWAP_KB=900000  # ~900 MB; Chromium needs headroom on the 512 MB Pi Zero 2 W
 
 # pyenv "suggested build environment" + our runtime needs.
+# Chromium package name varies by distro: resolved at install time.
 APT_PACKAGES=(
-  chromium fonts-dejavu-core
+  fonts-dejavu-core
   make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev
   libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev
   libffi-dev liblzma-dev libgdbm-dev libnss3-dev uuid-dev git curl
@@ -86,8 +87,42 @@ enable_spi() {
 # --------------------------------------------------------------------------- #
 install_apt() {
   info "Installing system packages"
+  local chromium_pkg=""
+  local apt_updated=0
+
+  # Prefer an already-installed Chromium package. Otherwise select one that
+  # exists in apt metadata for this distro.
+  if dpkg -s chromium >/dev/null 2>&1; then
+    chromium_pkg="chromium"
+  elif dpkg -s chromium-browser >/dev/null 2>&1; then
+    chromium_pkg="chromium-browser"
+  fi
+
+  if [[ -z "$chromium_pkg" ]]; then
+    if apt-cache show chromium >/dev/null 2>&1; then
+      chromium_pkg="chromium"
+    elif apt-cache show chromium-browser >/dev/null 2>&1; then
+      chromium_pkg="chromium-browser"
+    fi
+  fi
+
+  if [[ -z "$chromium_pkg" ]]; then
+    info "  refreshing apt metadata to detect Chromium package"
+    sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
+    apt_updated=1
+    if apt-cache show chromium >/dev/null 2>&1; then
+      chromium_pkg="chromium"
+    elif apt-cache show chromium-browser >/dev/null 2>&1; then
+      chromium_pkg="chromium-browser"
+    fi
+  fi
+
+  [[ -n "$chromium_pkg" ]] || die "could not find an installable Chromium package" \
+    "install either 'chromium' or 'chromium-browser' from your distro repos"
+
+  local packages=("$chromium_pkg" "${APT_PACKAGES[@]}")
   local missing=()
-  for pkg in "${APT_PACKAGES[@]}"; do
+  for pkg in "${packages[@]}"; do
     dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
@@ -95,7 +130,9 @@ install_apt() {
     return
   fi
   info "  installing: ${missing[*]}"
-  sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
+  if [[ "$apt_updated" -eq 0 ]]; then
+    sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
+  fi
   sudo apt-get install -y "${missing[@]}" \
     || die "apt-get install failed for: ${missing[*]}" \
            "run 'sudo apt-get install ${missing[*]}' and read the error above"
