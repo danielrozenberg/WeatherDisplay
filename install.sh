@@ -60,8 +60,11 @@ die() {
 command -v sudo >/dev/null 2>&1 || die "sudo is required but not found" \
   "install sudo, or run the apt/systemd steps manually"
 
-if ! grep -qi raspberry /proc/cpuinfo /sys/firmware/devicetree/base/model 2>/dev/null; then
-  warn "this does not look like a Raspberry Pi; hardware steps may not apply"
+if grep -qi raspberry /proc/cpuinfo /sys/firmware/devicetree/base/model 2>/dev/null; then
+  IS_PI=1
+else
+  IS_PI=0
+  warn "this does not look like a Raspberry Pi; skipping hardware steps (SPI, PiSugar, systemd service)"
 fi
 
 # --------------------------------------------------------------------------- #
@@ -281,14 +284,16 @@ main() {
   echo "WeatherDisplay installer"
   echo "  install dir: ${INSTALL_DIR}"
   echo
-  enable_spi
+  [[ "$IS_PI" -eq 1 ]] && enable_spi
   install_apt
   ensure_swap
   install_python
   install_project
   setup_config
-  check_pisugar
-  install_service
+  if [[ "$IS_PI" -eq 1 ]]; then
+    check_pisugar
+    install_service
+  fi
   echo
   ok "Done."
   echo
@@ -296,11 +301,13 @@ main() {
   echo "  1. Edit your settings:    ${CONFIG_FILE}"
   echo "  2. Test without shutdown: set auto_shutdown=false, then"
   echo "                            ${VENV_DIR}/bin/weatherdisplay --config ${CONFIG_FILE} update"
-  echo "  3. Watch logs:            journalctl -u ${SERVICE_NAME} -f"
-  echo "  4. Re-enable shutdown in config when you are happy."
-  echo
-  echo "Maintenance: 'sudo touch /boot/firmware/weatherdisplay-stayawake' keeps"
-  echo "the Pi awake after an update so you can SSH in."
+  if [[ "$IS_PI" -eq 1 ]]; then
+    echo "  3. Watch logs:            journalctl -u ${SERVICE_NAME} -f"
+    echo "  4. Re-enable shutdown in config when you are happy."
+    echo
+    echo "Maintenance: 'sudo touch /boot/firmware/weatherdisplay-stayawake' keeps"
+    echo "the Pi awake after an update so you can SSH in."
+  fi
 }
 
 main "$@"
