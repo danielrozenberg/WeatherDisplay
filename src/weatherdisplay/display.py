@@ -135,7 +135,7 @@ def _decode(png: bytes) -> Image.Image:
 def _push(image: Image.Image, saturation: float) -> None:
     """Sends an image to the Inky panel (lazy hardware import)."""
     try:
-        from inky import auto  # type: ignore[import-not-found]
+        import inky  # type: ignore[import-not-found]
     except ImportError as exc:
         raise errors.DisplayError(
             "the 'inky' package is not installed; install with "
@@ -143,7 +143,7 @@ def _push(image: Image.Image, saturation: float) -> None:
         ) from exc
 
     try:
-        device = auto.auto()
+        device = inky.auto()
         device.set_image(image, saturation=saturation)
         device.show()
     except Exception as exc:
