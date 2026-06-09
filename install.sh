@@ -83,6 +83,22 @@ enable_spi() {
       || die "could not enable SPI" "run 'sudo raspi-config' and enable SPI under Interface Options"
     ok "SPI enabled (a reboot may be required for it to take effect)"
   fi
+
+  # The Inky library drives the SPI chip-select (GPIO8) itself, but enabling
+  # SPI makes the kernel claim GPIO8 as spi0 CS0 -> the panel fails with "pins
+  # we need are in use". The spi0-0cs overlay tells SPI0 to expose no hardware
+  # chip-selects, freeing GPIO8. See pimoroni/inky README (Chip Select error).
+  local config="/boot/firmware/config.txt"
+  [[ -f "$config" ]] || config="/boot/config.txt"
+  if [[ ! -f "$config" ]]; then
+    warn "no boot config.txt found; add 'dtoverlay=spi0-0cs' manually for the Inky panel"
+  elif grep -qE '^[[:space:]]*dtoverlay=spi0-0cs([[:space:],]|$)' "$config"; then
+    ok "spi0-0cs overlay already set"
+  else
+    echo "dtoverlay=spi0-0cs" | sudo tee -a "$config" >/dev/null \
+      || die "could not edit ${config}" "add 'dtoverlay=spi0-0cs' to ${config} manually"
+    ok "added spi0-0cs overlay to ${config} (reboot required for the panel)"
+  fi
 }
 
 # --------------------------------------------------------------------------- #
