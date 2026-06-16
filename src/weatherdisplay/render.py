@@ -7,7 +7,7 @@ chains the two for the common case.
 On a dev machine Playwright's bundled Chromium is used. On the Raspberry Pi we
 point Playwright at the system ``chromium-browser`` (installed by install.sh)
 via ``executable_path`` so no ARM browser download is needed, and add memory-
-friendly flags for the Pi Zero 2 W.
+friendly flags for low-RAM Pis (e.g. the Pi Zero 2 W).
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ WEATHER_TEMPLATE = "weather.html.j2"
 
 # Chromium flags safe on both desktop and the Pi. --no-sandbox is required when
 # running as root (the appliance does); the shm/gpu flags avoid crashes and OOM
-# on the memory-constrained Pi Zero 2 W.
+# on memory-constrained Pis like the Pi Zero 2 W.
 _CHROMIUM_ARGS = [
     "--no-sandbox",
     "--disable-dev-shm-usage",

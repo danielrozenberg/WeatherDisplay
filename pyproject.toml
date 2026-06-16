@@ -27,7 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 # Hardware-only deps. Installed on the Raspberry Pi (`pip install .[pi]`); not
 # needed on a dev machine, which has no SPI/GPIO.
-pi = ["inky==2.3.0"]
+pi = ["inky==2.4.0"]  # 2.4.0 adds the AC-waveform Spectra 6 (E673) support
 # Linting, type-checking and tests.
 dev = ["ruff>=0.9", "pyrefly>=1.0", "pytest>=8.0", "types-requests>=2.32"]
 
