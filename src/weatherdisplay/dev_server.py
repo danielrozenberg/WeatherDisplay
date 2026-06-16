@@ -138,7 +138,12 @@ def serve(cfg: config_lib.Config) -> None:
     server.watch(str(render.templates_dir()))
     server.watch(str(render.static_dir()))
     _log.info("dev server on http://0.0.0.0:%d", cfg.dev_port)
-    server.serve(host="0.0.0.0", port=cfg.dev_port, restart_delay=0.3)
+    # live_css=False forces a full page reload on CSS edits. The default CSS
+    # hot-swap only reloads <link> stylesheets, which updates the live-HTML
+    # pane but leaves the server-rendered /screen.png (e-ink) pane stale.
+    server.serve(
+        host="0.0.0.0", port=cfg.dev_port, restart_delay=0.3, live_css=False
+    )
 
 
 def _dev_battery() -> pisugar.BatteryStatus:

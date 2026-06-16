@@ -17,9 +17,18 @@ cannot silently drift.
 from __future__ import annotations
 
 from PIL import Image
+from PIL import ImageChops
 
 # The native panel resolution.
 EINK_SIZE = (800, 480)
+
+# Monochrome snapping (applied before dithering). Browser text and hairlines
+# are antialiased to grey, which Floyd-Steinberg then turns into a black/white
+# stipple. Pixels whose channel spread (max-min) is within this bound are
+# treated as grey and snapped to solid black/white, so text stays crisp while
+# genuinely coloured pixels are left to dither faithfully.
+_MONO_CHROMA_MAX = 32
+_MONO_LUMA_SPLIT = 128  # grey pixels darker than this snap to black, else white
 
 # Copied verbatim from inky.inky_e673 (v2.3.0). The 7th entry is an unused
 # "clean" placeholder; only the first six are used for blending/quantizing.
@@ -89,6 +98,38 @@ def quantize(image: Image.Image, saturation: float) -> Image.Image:
     )
 
 
+def snap_grays_to_mono(image: Image.Image) -> Image.Image:
+    """Snaps near-grey pixels to pure black or white before dithering.
+
+    Antialiased text/hairlines render as grey, which Floyd-Steinberg dithers
+    into a distracting stipple. This snaps low-chroma pixels to solid ink (so
+    text comes out crisp) while leaving coloured pixels untouched (so they keep
+    dithering to the Spectra-6 inks). Applied on both the real-panel and dev
+    paths, so the preview stays faithful to what the panel shows.
+
+    Args:
+      image: The source screenshot (any mode; converted to RGB).
+
+    Returns:
+      A new RGB image with near-grey pixels forced to black or white.
+    """
+    rgb = image.convert("RGB")
+    red, green, blue = rgb.split()
+    hi = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    lo = ImageChops.darker(ImageChops.darker(red, green), blue)
+    grey_mask = ImageChops.subtract(hi, lo).point(
+        lambda c: 255 if c <= _MONO_CHROMA_MAX else 0
+    )
+    mono = (
+        rgb.convert("L")
+        .point(lambda lum: 0 if lum < _MONO_LUMA_SPLIT else 255)
+        .convert("RGB")
+    )
+    out = rgb.copy()
+    out.paste(mono, (0, 0), grey_mask)
+    return out
+
+
 def simulate_eink(
     image: Image.Image, saturation: float, *, scale: int = 1
 ) -> Image.Image:
@@ -106,7 +147,7 @@ def simulate_eink(
     Returns:
       An RGB image scaled to ``(800 * scale, 480 * scale)``.
     """
-    quantized = quantize(image, saturation).convert("RGB")
+    quantized = quantize(snap_grays_to_mono(image), saturation).convert("RGB")
     if scale == 1:
         return quantized
     width, height = quantized.size

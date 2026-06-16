@@ -18,10 +18,12 @@ from . import weather
 # precipitation bars rise from the baseline, so the two overlay each other.
 CHART_W = 760.0
 CHART_H = 150.0
-_TEMP_TOP = 14.0
+_HOUR_Y = 11.0  # baseline of the hour labels, in a row above the chart
+_TEMP_TOP = 30.0  # leaves room for the hour row and the floating temp labels
 _TEMP_BOTTOM = 96.0
 _PRECIP_BASE = 140.0
 _PRECIP_MAX_H = 74.0
+_PRECIP_LABEL_Y = _PRECIP_BASE - 3.0  # sits just inside the bottom of the bar
 # Pad the temperature axis so the line never touches the very top/bottom.
 _TEMP_PAD_C = 1.0
 
@@ -37,11 +39,9 @@ class ChartBar:
     precip_y: float  # top of the precipitation bar
     precip_w: float  # bar width
     precip_h: float  # bar height
-    precip_pct: int
-    hour_label: str  # e.g. "14"
-    show_hour: bool  # whether to draw the hour label (avoids crowding)
+    precip_pct: int  # precipitation odds, rounded to the nearest 10%
+    hour_label: str  # e.g. "3 p.m."
     temp_label: str  # primary-unit temperature, e.g. "14°"
-    show_temp: bool
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -50,6 +50,8 @@ class ChartView:
 
     width: float
     height: float
+    hour_y: float  # baseline y of the hour-label row above the chart
+    precip_label_y: float  # baseline y of the precip-% labels, at the bar bottom
     bars: list[ChartBar]
     temp_points: str  # "x,y x,y ..." for the SVG polyline
 
@@ -62,7 +64,7 @@ class ChipView:
     icon: str  # icon slug
     high: str  # primary-unit max, e.g. "21°"
     low: str  # primary-unit min, e.g. "12°"
-    precip_pct: int
+    precip_pct: int  # precipitation odds, rounded to the nearest 10%
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -88,7 +90,7 @@ class DisplayView:
     header: HeaderView
     chart: ChartView
     chips: list[ChipView]
-    updated: str  # e.g. "Mon 14:32"
+    updated: str  # e.g. "Mon 07 Jun 2026 14:32"
     battery_pct: int
     battery_low: bool
     static_base: str  # file:// (or http) base URL for static assets
@@ -121,7 +123,7 @@ def build_view(
             _build_chip(chip, metric=metric, today=today)
             for chip in report.days
         ],
-        updated=report.fetched_at.strftime("%a %H:%M"),
+        updated=report.fetched_at.strftime("%a %d %b %Y %H:%M"),
         battery_pct=round(battery.percent) if battery else 0,
         battery_low=battery.low if battery else True,
         static_base=static_base.rstrip("/"),
@@ -168,7 +170,7 @@ def _build_chip(
         icon=chip.condition.icon,
         high=high,
         low=low,
-        precip_pct=chip.precipitation_probability,
+        precip_pct=_round_precip(chip.precipitation_probability),
     )
 
 
@@ -177,15 +179,20 @@ def _build_chart(report: weather.WeatherReport, *, metric: bool) -> ChartView:
     hours = report.hours
     count = len(hours)
     if count == 0:
-        return ChartView(width=CHART_W, height=CHART_H, bars=[], temp_points="")
+        return ChartView(
+            width=CHART_W,
+            height=CHART_H,
+            hour_y=_HOUR_Y,
+            precip_label_y=_PRECIP_LABEL_Y,
+            bars=[],
+            temp_points="",
+        )
 
     lo = report.chart_min_c - _TEMP_PAD_C
     hi = report.chart_max_c + _TEMP_PAD_C
     span = hi - lo or 1.0
     column = CHART_W / count
     bar_w = column * 0.6
-    # Label every other hour (or every hour if few) to avoid clutter.
-    label_step = 1 if count <= 8 else 2
 
     bars: list[ChartBar] = []
     points: list[str] = []
@@ -205,11 +212,9 @@ def _build_chart(report: weather.WeatherReport, *, metric: bool) -> ChartView:
                 precip_y=_PRECIP_BASE - precip_h,
                 precip_w=bar_w,
                 precip_h=precip_h,
-                precip_pct=point.precipitation_probability,
-                hour_label=point.time.strftime("%H"),
-                show_hour=(i % label_step == 0),
+                precip_pct=_round_precip(point.precipitation_probability),
+                hour_label=_hour_label(point.time),
                 temp_label=f"{round(temp_value)}°",
-                show_temp=(i % label_step == 0),
             )
         )
         points.append(f"{x:.1f},{temp_y:.1f}")
@@ -217,9 +222,23 @@ def _build_chart(report: weather.WeatherReport, *, metric: bool) -> ChartView:
     return ChartView(
         width=CHART_W,
         height=CHART_H,
+        hour_y=_HOUR_Y,
+        precip_label_y=_PRECIP_LABEL_Y,
         bars=bars,
         temp_points=" ".join(points),
     )
+
+
+def _round_precip(probability: int) -> int:
+    """Rounds a precipitation probability to the nearest 10%."""
+    return round(probability / 10) * 10
+
+
+def _hour_label(when: datetime.datetime) -> str:
+    """Formats an hour in compact 12-hour style, e.g. '1p' or '12a'."""
+    hour = when.hour % 12 or 12
+    suffix = "a" if when.hour < 12 else "p"
+    return f"{hour}{suffix}"
 
 
 def _weekday_label(day: datetime.date, today: datetime.date) -> str:

@@ -11,7 +11,7 @@
     {%- set icons = view.static_base ~ "/icons" %}
 
     <header class="topbar">
-      <span class="updated">Updated {{ view.updated }}</span>
+      <span class="updated">Last updated: {{ view.updated }}</span>
       <span class="battery">
         {%- set fill = (view.battery_pct / 100 * 30) %}
         {%- set colour = "var(--warn)" if view.battery_low else "var(--ok)" %}
@@ -66,23 +66,18 @@
     </section>
 
     <section class="chart">
-      <div class="chart-title">
-        Next {{ view.chart.bars | length }} hours &middot; temperature and
-        precipitation chance
-      </div>
       <svg viewBox="0 0 {{ view.chart.width }} {{ view.chart.height }}" preserveAspectRatio="none">
         {% for bar in view.chart.bars %}
         <rect class="precip-bar" x="{{ '%.1f' % bar.precip_x }}" y="{{ '%.1f' % bar.precip_y }}" width="{{ '%.1f' % bar.precip_w }}" height="{{ '%.1f' % bar.precip_h }}" rx="1.5" />
+        {% if bar.precip_pct > 0 %}
+        <text class="precip-val" x="{{ '%.1f' % bar.x }}" y="{{ '%.1f' % view.chart.precip_label_y }}">{{ bar.precip_pct }}%</text>
+        {% endif %}
         {% endfor %}
         <polyline class="temp-line" points="{{ view.chart.temp_points }}" />
         {% for bar in view.chart.bars %}
         <circle class="temp-dot" cx="{{ '%.1f' % bar.temp_x }}" cy="{{ '%.1f' % bar.temp_y }}" r="2.5" />
-        {% if bar.show_temp %}
         <text class="temp-val" x="{{ '%.1f' % bar.temp_x }}" y="{{ '%.1f' % (bar.temp_y - 8) }}">{{ bar.temp_label }}</text>
-        {% endif %}
-        {% if bar.show_hour %}
-        <text class="hour" x="{{ '%.1f' % bar.x }}" y="{{ '%.1f' % (view.chart.height - 2) }}">{{ bar.hour_label }}</text>
-        {% endif %}
+        <text class="hour" x="{{ '%.1f' % bar.x }}" y="{{ '%.1f' % view.chart.hour_y }}">{{ bar.hour_label }}</text>
         {% endfor %}
       </svg>
     </section>

@@ -6,10 +6,22 @@
  * Greys are intentional — they dither to a black/white stipple on the panel.
  */
 
+/* --- Display font -------------------------------------------------------
+ * Pixel font for this pixelated panel. To try a different Google Font, change
+ * BOTH the @import URL and the first name in --font-display below — that's the
+ * only edit needed. The render waits for networkidle + document.fonts.ready,
+ * so the CDN font is loaded before the screenshot is captured.
+ *
+ * This pulls the font over the network at render time. Once a font is chosen,
+ * install.sh will vendor it locally (fonts have their own licences, so we do
+ * not commit them to the repo) and this @import becomes a local url(). */
+@import url('https://fonts.googleapis.com/css2?family=Jersey+25&display=swap');
+
 /* Only the six Spectra-6 inks are used, so solid fills quantize to a single
  * ink with no dithering. There is no grey ink: "muted" is therefore black and
  * hierarchy comes from font size/weight instead of colour. */
 :root {
+  --font-display: 'Jersey 25', monospace;
   --ink: #000000; /* black */
   --paper: #ffffff; /* white */
   --muted: #000000; /* no grey ink -> black */
@@ -34,7 +46,7 @@ body {
 }
 
 body {
-  font-family: "DejaVu Sans", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-display);
   color: var(--ink);
   background: var(--paper);
   -webkit-font-smoothing: none;

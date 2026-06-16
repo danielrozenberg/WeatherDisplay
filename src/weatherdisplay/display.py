@@ -144,7 +144,10 @@ def _push(image: Image.Image, saturation: float) -> None:
 
     try:
         device = inky.auto()
-        device.set_image(image, saturation=saturation)
+        # Snap antialiased greys to solid ink so the driver's dithering leaves
+        # text crisp (mirrors the dev preview's simulate_eink preprocessing).
+        prepared = palette.snap_grays_to_mono(image)
+        device.set_image(prepared, saturation=saturation)
         device.show()
     except Exception as exc:
         raise errors.DisplayError(f"could not update the panel: {exc}") from exc
