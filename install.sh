@@ -21,7 +21,7 @@ SERVICE_NAME="weatherdisplay.service"
 SERVICE_TEMPLATE="${INSTALL_DIR}/systemd/${SERVICE_NAME}"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}"
 PYENV_ROOT="${PYENV_ROOT:-${HOME}/.pyenv}"
-MIN_SWAP_KB=900000  # ~900 MB; Chromium needs headroom on the 512 MB Pi Zero 2 W
+MIN_SWAP_KB=900000  # ~900 MB; Chromium needs headroom on low-RAM Pis (512 MB Zero 2 W)
 
 # pyenv "suggested build environment" + our runtime needs.
 # Chromium package name varies by distro: resolved at install time.
@@ -159,7 +159,7 @@ install_apt() {
 }
 
 # --------------------------------------------------------------------------- #
-# 3. Ensure enough swap for Chromium on the Pi Zero 2 W
+# 3. Ensure enough swap for Chromium on low-RAM Pis (e.g. the Pi Zero 2 W)
 # --------------------------------------------------------------------------- #
 ensure_swap() {
   info "Checking swap space"
@@ -224,7 +224,7 @@ install_python() {
   if pyenv versions --bare | grep -qx "$version"; then
     ok "Python ${version} already built"
   else
-    info "  building Python ${version} (this can take 20+ min on a Pi Zero)"
+    info "  building Python ${version} (this can take 20+ min on a low-power Pi)"
     pyenv install -s "$version" \
       || die "Python ${version} build failed" \
              "check the apt build deps installed above, then re-run ./install.sh"

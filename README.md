@@ -17,18 +17,21 @@ and an error banner explains what went wrong.
 
 ## Hardware
 
-| Part                                                     | Notes                                                      |
-| -------------------------------------------------------- | ---------------------------------------------------------- |
-| Raspberry Pi Zero 2 W                                    | Any 40-pin Pi works; the Zero 2 W is the low-power target. |
-| Pimoroni Inky Impression 7.3" (2025, Spectra 6 / PIM773) | 800×480, 6-colour e-ink.                                   |
-| PiSugar 3 Plus                                           | Battery + RTC that powers the Pi on/off on a schedule.     |
-| microSD card                                             | Raspberry Pi OS (64-bit recommended).                      |
+| Part                                                     | Notes                                                                                              |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Raspberry Pi Zero 2 W                                    | Any 40-pin Pi works; the Zero 2 W is the low-power target.                                         |
+| Pimoroni Inky Impression 7.3" (2025, Spectra 6 / PIM773) | 800×480, 6-colour e-ink.                                                                           |
+| PiSugar 3 Plus                                           | Battery + RTC that powers the Pi on/off on a schedule.                                             |
+| microSD card                                             | Raspberry Pi OS — 64-bit on 64-bit-capable boards; 32-bit (armhf) on ARMv7 boards like the Pi 2 B. |
 
 ### Assembly
 
-1. **Flash Raspberry Pi OS** (64-bit) and complete first boot, Wi-Fi and SSH.
-   Set the correct **timezone** (`sudo raspi-config` → Localisation) — the wake
-   schedule and sunrise/sunset rely on it.
+1. **Flash Raspberry Pi OS** and complete first boot, networking and SSH. Use
+   64-bit on 64-bit-capable boards; on ARMv7 boards like the Pi 2 B (which can't
+   run 64-bit) use the 32-bit/armhf image. Boards without onboard WiFi (e.g. the
+   Pi 2 B) need Ethernet or a USB WiFi dongle. Set the correct **timezone**
+   (`sudo raspi-config` → Localisation) — the wake schedule and sunrise/sunset
+   rely on it.
 2. **Attach the PiSugar 3 Plus** to the back of the Pi and connect the battery.
    Follow Pimoroni/PiSugar's guide:
    <https://github.com/PiSugar/PiSugar/wiki/PiSugar-3-series>. Keep the PiSugar
@@ -59,8 +62,8 @@ cd ~/WeatherDisplay
 
 - enable the **SPI** bus (needed by the Inky),
 - install **Chromium**, fonts and the **pyenv build dependencies** via apt,
-- ensure ~1 GB of **swap** (Chromium is memory-hungry on the 512 MB Zero 2 W),
-- install **pyenv** and build the pinned **Python 3.14** (slow on a Pi Zero),
+- ensure ~1 GB of **swap** (Chromium is memory-hungry on low-RAM Pis like the 512 MB Zero 2 W),
+- install **pyenv** and build the pinned **Python 3.14** (slow on low-power Pis),
 - create a **virtualenv** and install WeatherDisplay (with the `[pi]` hardware
   extra; it uses the system Chromium, so no browser download),
 - create **`config.toml`** from the example,
