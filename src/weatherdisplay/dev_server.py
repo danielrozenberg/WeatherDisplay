@@ -95,16 +95,19 @@ def create_app(cfg: config_lib.Config) -> flask.Flask:
 
     @app.route("/font/<slot>", methods=["POST"])
     def upload_font(slot: str) -> werkzeug.Response:
-        if slot not in fonts.slots():
+        # Match the path param against the typed slots so the value we pass on
+        # is a Slot, not a bare str.
+        target = next((s for s in fonts.slots() if s == slot), None)
+        if target is None:
             flask.abort(404)
         upload = flask.request.files.get("font")
         if upload is None:
             flask.abort(400)
         _FONT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        path = _FONT_UPLOAD_DIR / f"{slot}.ttf"
+        path = _FONT_UPLOAD_DIR / f"{target}.ttf"
         upload.save(path)
-        fonts.set_override(slot, path)  # type: ignore[arg-type]
-        _log.info("hot-swapped %s font -> %s", slot, upload.filename)
+        fonts.set_override(target, path)
+        _log.info("hot-swapped %s font -> %s", target, upload.filename)
         return flask.Response(status=204)
 
     @app.route("/font/reset", methods=["POST"])
