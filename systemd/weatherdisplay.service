@@ -18,11 +18,9 @@ Type=oneshot
 User=root
 WorkingDirectory=@INSTALL_DIR@
 Environment=WEATHERDISPLAY_STATE=@STATE_DIR@
-# Use the system Chromium (installed via apt) for the screenshot.
-Environment=WEATHERDISPLAY_CHROMIUM=@CHROMIUM@
 ExecStart=@VENV@/bin/weatherdisplay --config @CONFIG@ update
-# Give the one-shot render plenty of time on the slow Pi Zero 2 W.
-TimeoutStartSec=300
+# Generous timeout for the fetch + Pillow render on a slow Pi.
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 

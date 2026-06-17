@@ -21,10 +21,10 @@ SERVICE_NAME="weatherdisplay.service"
 SERVICE_TEMPLATE="${INSTALL_DIR}/systemd/${SERVICE_NAME}"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}"
 PYENV_ROOT="${PYENV_ROOT:-${HOME}/.pyenv}"
-MIN_SWAP_KB=900000  # ~900 MB; Chromium needs headroom on low-RAM Pis (512 MB Zero 2 W)
+MIN_SWAP_KB=900000  # ~900 MB; headroom for the Python build on low-RAM Pis
 
-# pyenv "suggested build environment" + our runtime needs.
-# Chromium package name varies by distro: resolved at install time.
+# pyenv "suggested build environment" + our runtime needs (fonts-dejavu-core is
+# the error-banner fallback font).
 APT_PACKAGES=(
   fonts-dejavu-core
   make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev
@@ -102,46 +102,12 @@ enable_spi() {
 }
 
 # --------------------------------------------------------------------------- #
-# 2. Install APT packages (Chromium, fonts, Python build deps)
+# 2. Install APT packages (fonts + Python build deps)
 # --------------------------------------------------------------------------- #
 install_apt() {
   info "Installing system packages"
-  local chromium_pkg=""
-  local apt_updated=0
-
-  # Prefer an already-installed Chromium package. Otherwise select one that
-  # exists in apt metadata for this distro.
-  if dpkg -s chromium >/dev/null 2>&1; then
-    chromium_pkg="chromium"
-  elif dpkg -s chromium-browser >/dev/null 2>&1; then
-    chromium_pkg="chromium-browser"
-  fi
-
-  if [[ -z "$chromium_pkg" ]]; then
-    if apt-cache show chromium >/dev/null 2>&1; then
-      chromium_pkg="chromium"
-    elif apt-cache show chromium-browser >/dev/null 2>&1; then
-      chromium_pkg="chromium-browser"
-    fi
-  fi
-
-  if [[ -z "$chromium_pkg" ]]; then
-    info "  refreshing apt metadata to detect Chromium package"
-    sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
-    apt_updated=1
-    if apt-cache show chromium >/dev/null 2>&1; then
-      chromium_pkg="chromium"
-    elif apt-cache show chromium-browser >/dev/null 2>&1; then
-      chromium_pkg="chromium-browser"
-    fi
-  fi
-
-  [[ -n "$chromium_pkg" ]] || die "could not find an installable Chromium package" \
-    "install either 'chromium' or 'chromium-browser' from your distro repos"
-
-  local packages=("$chromium_pkg" "${APT_PACKAGES[@]}")
   local missing=()
-  for pkg in "${packages[@]}"; do
+  for pkg in "${APT_PACKAGES[@]}"; do
     dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
@@ -149,9 +115,7 @@ install_apt() {
     return
   fi
   info "  installing: ${missing[*]}"
-  if [[ "$apt_updated" -eq 0 ]]; then
-    sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
-  fi
+  sudo apt-get update || die "apt-get update failed" "check your network and /etc/apt/sources.list"
   sudo apt-get install -y "${missing[@]}" \
     || die "apt-get install failed for: ${missing[*]}" \
            "run 'sudo apt-get install ${missing[*]}' and read the error above"
@@ -159,7 +123,7 @@ install_apt() {
 }
 
 # --------------------------------------------------------------------------- #
-# 3. Ensure enough swap for Chromium on low-RAM Pis (e.g. the Pi Zero 2 W)
+# 3. Ensure enough swap for the Python build on low-RAM Pis (e.g. Zero 2 W)
 # --------------------------------------------------------------------------- #
 ensure_swap() {
   info "Checking swap space"
@@ -246,8 +210,8 @@ install_project() {
     "$py" -m venv "$VENV_DIR" || die "could not create venv at ${VENV_DIR}" "check disk space and permissions"
   fi
   "${VENV_DIR}/bin/python" -m pip install --quiet --upgrade pip
-  # The [pi] extra pulls in the hardware 'inky' package. We deliberately do NOT
-  # run 'playwright install' here: on the Pi we use the system Chromium.
+  # The [pi] extra pulls in the hardware 'inky' package. Rendering is pure
+  # Pillow now, so there is no browser to install.
   "${VENV_DIR}/bin/pip" install --quiet -e "${INSTALL_DIR}[pi]" \
     || die "pip install failed" "re-run with '${VENV_DIR}/bin/pip install -e ${INSTALL_DIR}[pi]' to see details"
   ok "WeatherDisplay installed into ${VENV_DIR}"
@@ -288,16 +252,12 @@ install_service() {
   info "Installing systemd service"
   sudo mkdir -p "$STATE_DIR"
 
-  local chromium
-  chromium="$(command -v chromium-browser || command -v chromium || echo /usr/bin/chromium-browser)"
-
   local rendered
   rendered="$(mktemp)"
   sed -e "s|@INSTALL_DIR@|${INSTALL_DIR}|g" \
       -e "s|@VENV@|${VENV_DIR}|g" \
       -e "s|@CONFIG@|${CONFIG_FILE}|g" \
       -e "s|@STATE_DIR@|${STATE_DIR}|g" \
-      -e "s|@CHROMIUM@|${chromium}|g" \
       "$SERVICE_TEMPLATE" > "$rendered"
 
   if [[ -f "$SERVICE_DEST" ]] && sudo cmp -s "$rendered" "$SERVICE_DEST"; then

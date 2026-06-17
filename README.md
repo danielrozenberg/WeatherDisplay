@@ -60,12 +60,12 @@ cd ~/WeatherDisplay
 
 `install.sh` is **idempotent** — re-run it any time. It will:
 
-- enable the **SPI** bus (needed by the Inky),
-- install **Chromium**, fonts and the **pyenv build dependencies** via apt,
-- ensure ~1 GB of **swap** (Chromium is memory-hungry on low-RAM Pis like the 512 MB Zero 2 W),
+- enable the **SPI** bus (needed by the Inky) and the `spi0-0cs` overlay,
+- install **fonts** and the **pyenv build dependencies** via apt,
+- ensure ~1 GB of **swap** (the Python build is memory-hungry on low-RAM Pis like the 512 MB Zero 2 W),
 - install **pyenv** and build the pinned **Python 3.14** (slow on low-power Pis),
 - create a **virtualenv** and install WeatherDisplay (with the `[pi]` hardware
-  extra; it uses the system Chromium, so no browser download),
+  extra),
 - create **`config.toml`** from the example,
 - check that **`pisugar-server`** is reachable, and
 - install + enable the **systemd service**.
@@ -127,21 +127,22 @@ sudo touch /boot/firmware/weatherdisplay-stayawake   # skip auto-shutdown
 sudo rm    /boot/firmware/weatherdisplay-stayawake    # resume normal operation
 ```
 
-## Dev mode (design on non-RaspberryPi environment)
+## Dev mode (design without a Raspberry Pi)
 
 On any machine with Python 3.14 you can iterate on the design without a Pi:
 
 ```bash
 pip install -e ".[dev]"
-playwright install chromium      # bundled browser for the dev machine
 weatherdisplay --config config.toml dev
 ```
 
-Open <http://localhost:8080>. The top pane is the live 800×480 HTML; the bottom
-pane is the **faithful 6-colour e-ink simulation** (the same Floyd-Steinberg
-dithering the panel applies, at your configured saturation). Edit a template or
-the stylesheet and the page **reloads automatically**. Append `?battery=12` to
-preview the low-battery (red) state.
+Open <http://localhost:8080>. It shows the **rendered panel image** as the
+faithful 6-colour e-ink simulation. Buttons switch between **weather presets**
+(rainy, snowy, hot, cold, …) or a **live** fetch; a battery field previews the
+gauge (red below 20%); and you can **drag-and-drop a `.ttf`** onto the Title or
+Body target to hot-swap the font. The server restarts on code edits and the
+image refreshes on its own, so changes to the renderer, icons, fonts or presets
+show up immediately.
 
 ![e-ink simulation](docs/screenshot-eink.png)
 
@@ -164,7 +165,7 @@ everything except the final panel push runs and is tested on a normal machine.
 PiSugar RTC powers on  ->  systemd runs `weatherdisplay update`
    -> read battery (PiSugar TCP :8423)
    -> fetch forecast (Open-Meteo JSON)
-   -> render Jinja2 HTML  ->  headless Chromium screenshot (800×480 PNG)
+   -> draw the 800×480 image directly with Pillow (pixel fonts + pixel-art icons)
    -> push to Inky (or, on error, overlay a banner on the last good screen)
    -> schedule next PiSugar wake-up  ->  power off
 ```
