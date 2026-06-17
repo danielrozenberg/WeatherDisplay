@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
-from typing import cast
 
 import pytest
 
@@ -92,12 +91,24 @@ def test_day_chips_respects_limit(cfg: config_lib.Config) -> None:
     assert len(report.days) == 2
 
 
-def test_parse_missing_section_raises(cfg: config_lib.Config) -> None:
-    # Deliberately drop the required "current" block to exercise the guard.
-    bad = cast(
-        weather.ForecastPayload,
-        {"hourly": _PAYLOAD["hourly"], "daily": _PAYLOAD["daily"]},
-    )
+def test_parse_malformed_response_raises(cfg: config_lib.Config) -> None:
+    # A structurally-valid payload with empty daily arrays trips the guard
+    # (daily["sunrise"][0] -> IndexError -> ApiError "response shape").
+    empty_daily: weather.DailyBlock = {
+        "time": [],
+        "weather_code": [],
+        "temperature_2m_max": [],
+        "temperature_2m_min": [],
+        "precipitation_probability_max": [],
+        "sunrise": [],
+        "sunset": [],
+        "uv_index_max": [],
+    }
+    bad: weather.ForecastPayload = {
+        "current": _PAYLOAD["current"],
+        "hourly": _PAYLOAD["hourly"],
+        "daily": empty_daily,
+    }
     with pytest.raises(errors.ApiError, match="response shape"):
         weather.parse(bad, cfg, now=_now(cfg))
 
