@@ -24,12 +24,14 @@ from . import errors
 from . import wmo
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
+AQI_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 # Open-Meteo's forecast horizon cap (days).
 _MAX_FORECAST_DAYS = 16
 
 _CURRENT_VARS = (
-    "temperature_2m,relative_humidity_2m,weather_code,uv_index,is_day"
+    "temperature_2m,relative_humidity_2m,weather_code,uv_index,is_day,"
+    "wind_speed_10m,wind_direction_10m"
 )
 _HOURLY_VARS = "temperature_2m,precipitation_probability"
 _DAILY_VARS = (
@@ -49,6 +51,8 @@ class CurrentBlock(TypedDict):
     relative_humidity_2m: float
     weather_code: int
     is_day: int
+    wind_speed_10m: float
+    wind_direction_10m: float
     uv_index: NotRequired[float]
 
 
@@ -79,6 +83,18 @@ class ForecastPayload(TypedDict):
     current: CurrentBlock
     hourly: HourlyBlock
     daily: DailyBlock
+
+
+class AirQualityCurrent(TypedDict):
+    """The `current` block of the air-quality response."""
+
+    us_aqi: NotRequired[float | None]
+
+
+class AirQualityPayload(TypedDict):
+    """The air-quality response (a separate Open-Meteo endpoint)."""
+
+    current: AirQualityCurrent
 
 
 def celsius_to_fahrenheit(celsius: float) -> float:
@@ -136,10 +152,23 @@ class WeatherReport:
     uv_index: float
     weather_code: int
     is_day: bool
-    sunrise: datetime.datetime
-    sunset: datetime.datetime
+    wind_speed: float  # in cfg's unit (km/h metric, mph imperial)
+    wind_direction: int  # degrees, 0..359 (0 = from the north)
+    sunrises: list[datetime.datetime]  # one per forecast day, local
+    sunsets: list[datetime.datetime]  # one per forecast day, local
     hours: list[HourPoint]
     days: list[DayChip]
+    air_quality: int | None = None  # US AQI; None if the AQI fetch failed
+
+    @property
+    def sunrise(self) -> datetime.datetime:
+        """Today's sunrise (the first forecast day)."""
+        return self.sunrises[0]
+
+    @property
+    def sunset(self) -> datetime.datetime:
+        """Today's sunset (the first forecast day)."""
+        return self.sunsets[0]
 
     @property
     def temperature_f(self) -> float:
@@ -181,7 +210,8 @@ def _session() -> requests.Session:
 def _forecast_days(cfg: config_lib.Config) -> int:
     """Returns how many days to request for both the chart and the chips."""
     needed_for_hours = cfg.chart_hours // 24 + 2
-    return min(_MAX_FORECAST_DAYS, max(cfg.day_chips, needed_for_hours))
+    # +1 because the chips start tomorrow (today's row is dropped).
+    return min(_MAX_FORECAST_DAYS, max(cfg.day_chips + 1, needed_for_hours))
 
 
 def fetch(
@@ -200,11 +230,13 @@ def fetch(
       NetworkError: If Open-Meteo could not be reached.
       ApiError: If the response was an error status or unparseable.
     """
+    wind_unit = "mph" if cfg.primary_unit == "imperial" else "kmh"
     params = {
         "latitude": cfg.latitude,
         "longitude": cfg.longitude,
         "timezone": cfg.timezone,
         "temperature_unit": "celsius",
+        "wind_speed_unit": wind_unit,
         "timeformat": "iso8601",
         "current": _CURRENT_VARS,
         "hourly": _HOURLY_VARS,
@@ -232,7 +264,34 @@ def fetch(
     except ValueError as exc:
         raise errors.ApiError(f"Open-Meteo returned non-JSON: {exc}") from exc
 
-    return parse(payload, cfg, now=now or datetime.datetime.now(cfg.tzinfo))
+    when = now or datetime.datetime.now(cfg.tzinfo)
+    return parse(payload, cfg, now=when, air_quality=_fetch_air_quality(cfg))
+
+
+def _fetch_air_quality(cfg: config_lib.Config) -> int | None:
+    """Best-effort current US AQI; returns None if it can't be fetched.
+
+    Air quality is a separate Open-Meteo endpoint, so a failure here must not
+    sink the whole update — the display just omits the AQI reading.
+    """
+    params = {
+        "latitude": cfg.latitude,
+        "longitude": cfg.longitude,
+        "current": "us_aqi",
+    }
+    try:
+        response = _session().get(AQI_URL, params=params, timeout=20)
+        response.raise_for_status()
+        payload: AirQualityPayload = response.json()
+        value = payload["current"].get("us_aqi")
+    except (
+        requests.exceptions.RequestException,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):
+        return None
+    return round(value) if value is not None else None
 
 
 def _safe_reason(response: requests.Response) -> str:
@@ -250,6 +309,7 @@ def parse(
     cfg: config_lib.Config,
     *,
     now: datetime.datetime,
+    air_quality: int | None = None,
 ) -> WeatherReport:
     """Parses a raw Open-Meteo JSON payload into a `WeatherReport`.
 
@@ -259,6 +319,7 @@ def parse(
       payload: The decoded JSON body from the Open-Meteo forecast API.
       cfg: The loaded configuration.
       now: The current time, used to slice the hourly window.
+      air_quality: The current US AQI from the separate endpoint, or None.
 
     Returns:
       The parsed weather report.
@@ -277,9 +338,13 @@ def parse(
         weather_code = current["weather_code"]
         is_day = bool(current["is_day"])
         uv_index = _first_uv(current, daily)
+        wind_speed = current["wind_speed_10m"]
+        wind_direction = round(current["wind_direction_10m"])
 
-        sunrise = _parse_local(daily["sunrise"][0], tz)
-        sunset = _parse_local(daily["sunset"][0], tz)
+        sunrises = [_parse_local(s, tz) for s in daily["sunrise"]]
+        sunsets = [_parse_local(s, tz) for s in daily["sunset"]]
+        if not sunrises or not sunsets:
+            raise ValueError("daily block has no sun times")
 
         hours = _parse_hours(hourly, tz, now, cfg.chart_hours)
         days = _parse_days(daily, cfg.day_chips)
@@ -295,10 +360,13 @@ def parse(
         uv_index=uv_index,
         weather_code=weather_code,
         is_day=is_day,
-        sunrise=sunrise,
-        sunset=sunset,
+        wind_speed=wind_speed,
+        wind_direction=wind_direction,
+        sunrises=sunrises,
+        sunsets=sunsets,
         hours=hours,
         days=days,
+        air_quality=air_quality,
     )
 
 
@@ -341,16 +409,18 @@ def _parse_hours(
 
 
 def _parse_days(daily: DailyBlock, limit: int) -> list[DayChip]:
-    """Parses up to ``limit`` day chips from the daily series."""
-    chips: list[DayChip] = []
-    for iso, code, tmax, tmin, prob in zip(
+    """Parses up to ``limit`` day chips, starting tomorrow (today dropped)."""
+    rows = zip(
         daily["time"],
         daily["weather_code"],
         daily["temperature_2m_max"],
         daily["temperature_2m_min"],
         daily["precipitation_probability_max"],
         strict=False,
-    ):
+    )
+    next(rows, None)  # drop today; the chip strip starts tomorrow
+    chips: list[DayChip] = []
+    for iso, code, tmax, tmin, prob in rows:
         chips.append(
             DayChip(
                 day=datetime.date.fromisoformat(iso),

@@ -38,12 +38,19 @@ def _build(
     day_precip: int,
     sunrise: tuple[int, int],
     sunset: tuple[int, int],
+    clock: tuple[int, int] = (14, 30),
+    wind_speed: float = 14.0,
+    wind_direction: int = 315,
+    air_quality: int | None = 42,
 ) -> weather.WeatherReport:
     """Synthesizes a full report from a few scenario parameters."""
-    now = _NOW.replace(tzinfo=cfg.tzinfo)
+    now = _NOW.replace(hour=clock[0], minute=clock[1], tzinfo=cfg.tzinfo)
+    # Hourly points land on the hour, like real Open-Meteo data, so the chart
+    # columns (and their labels) align with sunrise/sunset notch positions.
+    start_hour = now.replace(minute=0, second=0, microsecond=0)
     hours = []
     for i in range(cfg.chart_hours):
-        t = now + datetime.timedelta(hours=i)
+        t = start_hour + datetime.timedelta(hours=i)
         # Diurnal wave peaking mid-afternoon.
         wave = hour_amp * math.sin(2.0 * math.pi * (t.hour - 9) / 24.0)
         jitter = precip + 12 * math.sin(i / 1.7)
@@ -55,8 +62,17 @@ def _build(
             )
         )
     base_day = now.date()
+    # Sun times cover today onward (for the chart notches); the chips start
+    # tomorrow (i = 1..day_chips), matching the real parser.
+    sunrises = []
+    sunsets = []
+    for i in range(cfg.day_chips + 1):
+        day = base_day + datetime.timedelta(days=i)
+        midnight = datetime.datetime.combine(day, datetime.time(), cfg.tzinfo)
+        sunrises.append(midnight.replace(hour=sunrise[0], minute=sunrise[1]))
+        sunsets.append(midnight.replace(hour=sunset[0], minute=sunset[1]))
     days = []
-    for i in range(cfg.day_chips):
+    for i in range(1, cfg.day_chips + 1):
         days.append(
             weather.DayChip(
                 day=base_day + datetime.timedelta(days=i),
@@ -73,10 +89,13 @@ def _build(
         uv_index=uv,
         weather_code=code,
         is_day=is_day,
-        sunrise=now.replace(hour=sunrise[0], minute=sunrise[1]),
-        sunset=now.replace(hour=sunset[0], minute=sunset[1]),
+        wind_speed=wind_speed,
+        wind_direction=wind_direction,
+        sunrises=sunrises,
+        sunsets=sunsets,
         hours=hours,
         days=days,
+        air_quality=air_quality,
     )
 
 
@@ -145,6 +164,9 @@ def _rainy(cfg: config_lib.Config) -> weather.WeatherReport:
         day_precip=85,
         sunrise=(6, 20),
         sunset=(20, 0),
+        wind_speed=29,
+        wind_direction=180,
+        air_quality=63,
     )
 
 
@@ -213,6 +235,9 @@ def _hot(cfg: config_lib.Config) -> weather.WeatherReport:
         day_precip=0,
         sunrise=(5, 40),
         sunset=(20, 50),
+        wind_speed=8,
+        wind_direction=90,
+        air_quality=145,
     )
 
 
@@ -233,10 +258,34 @@ def _cold(cfg: config_lib.Config) -> weather.WeatherReport:
     )
 
 
+def _evening(cfg: config_lib.Config) -> weather.WeatherReport:
+    # An 18:30 start so the window holds both tonight's sunset and tomorrow's
+    # sunrise inline.
+    return _build(
+        cfg,
+        temp_c=19.0,
+        humidity=58,
+        uv=2.0,
+        code=1,
+        is_day=True,
+        hour_amp=4.0,
+        precip=15,
+        day_codes=[1, 2, 0, 2, 3],
+        day_precip=20,
+        sunrise=(6, 0),
+        sunset=(20, 30),
+        clock=(18, 30),
+        wind_speed=10,
+        wind_direction=270,
+        air_quality=55,
+    )
+
+
 PRESETS: dict[str, Callable[[config_lib.Config], weather.WeatherReport]] = {
     "clear-day": _clear_day,
     "clear-night": _clear_night,
     "partly-cloudy": _partly_cloudy,
+    "evening": _evening,
     "rainy": _rainy,
     "snowy": _snowy,
     "thunderstorm": _thunderstorm,

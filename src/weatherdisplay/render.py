@@ -44,14 +44,15 @@ _HERO_Y = 44
 _HERO_ICON = 96
 _STATS_X = 432
 
-# Chart band.
-_CHART_TOP = 222
-_CHART_BOT = 360
-_HOUR_LABEL_Y = 226
-_TEMP_TOP = 250
-_TEMP_BOTTOM = 318
-_PRECIP_BASE = 352
-_PRECIP_MAX_H = 64
+# Chart band. No separator lines around it; the time axis sits at the bottom
+# with the temperature line and precip bars above it and hour labels / sun
+# notches below it.
+_TEMP_TOP = 232
+_TEMP_BOTTOM = 290
+_AXIS_Y = 316  # the time axis / precip baseline
+_PRECIP_MAX_H = 46
+_HOUR_LABEL_Y = 320  # hour labels, just below the axis
+_SUN_ICON = 16  # smaller icon for the sunrise/sunset notches
 _TEMP_PAD = 1.0
 
 # Day-chip strip.
@@ -77,7 +78,7 @@ def render_image(
     _draw_topbar(draw, view)
     _draw_hero(draw, image, view)
     _draw_stats(draw, image, view)
-    _draw_chart(draw, view)
+    _draw_chart(draw, image, view)
     _draw_chips(draw, image, view)
     return image
 
@@ -102,7 +103,7 @@ def _draw_topbar(
     """Draws the 'Updated …' line and the battery gauge."""
     draw.text(
         (_MARGIN + 4, 16),
-        f"UPDATED {view.updated}",
+        f"Last updated: {view.updated}",
         font=fonts.font("tiny"),
         fill=_BLACK,
         anchor="lm",
@@ -152,15 +153,17 @@ def _draw_hero(
         fill=_RED,
         anchor="la",
     )
+    sec_font = fonts.font("secondary")
     draw.text(
         (tx, _HERO_Y + 104),
         header.temp_secondary,
-        font=fonts.font("secondary"),
+        font=sec_font,
         fill=_BLACK,
         anchor="la",
     )
+    sec_w = draw.textlength(header.temp_secondary, font=sec_font)
     draw.text(
-        (tx, _HERO_Y + 140),
+        (tx + sec_w + 16, _HERO_Y + 104),
         header.condition_label,
         font=fonts.font("condition"),
         fill=_BLACK,
@@ -171,13 +174,13 @@ def _draw_hero(
 def _draw_stats(
     draw: ImageDraw.ImageDraw, image: Image.Image, view: viewmodel.DisplayView
 ) -> None:
-    """Draws the 2x2 stats panel (humidity, UV, sunrise, sunset)."""
+    """Draws the 2x2 stats panel (humidity, UV, wind, air quality)."""
     header = view.header
     cells = (
         ("humidity", f"{header.humidity}%", "Humidity"),
         ("uv", header.uv_index, f"UV {header.uv_label}"),
-        ("sunrise", header.sunrise, "Sunrise"),
-        ("sunset", header.sunset, "Sunset"),
+        ("wind", header.wind_value, header.wind_unit),
+        ("air-quality", header.aqi_value, header.aqi_label),
     )
     col_w, row_h = 178, 74
     for i, (slug, value, label) in enumerate(cells):
@@ -202,15 +205,10 @@ def _draw_stats(
         )
 
 
-def _draw_chart(draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView) -> None:
-    """Draws the hourly temperature line and precipitation bars."""
-    draw.line(
-        (_MARGIN, _CHART_TOP, WIDTH - _MARGIN, _CHART_TOP), fill=_BLACK, width=2
-    )
-    draw.line(
-        (_MARGIN, _CHART_BOT, WIDTH - _MARGIN, _CHART_BOT), fill=_BLACK, width=2
-    )
-
+def _draw_chart(
+    draw: ImageDraw.ImageDraw, image: Image.Image, view: viewmodel.DisplayView
+) -> None:
+    """Draws the temperature line + precip bars above a bottom time axis."""
     bars = view.chart.bars
     count = len(bars)
     if count == 0:
@@ -222,6 +220,12 @@ def _draw_chart(draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView) -> None:
     span = (hi - lo) or 1.0
     bar_w = max(4, int(col * 0.5))
 
+    # The time axis along the bottom; precip bars rise from it, hour labels and
+    # sun notches hang off it.
+    draw.line(
+        (_MARGIN, _AXIS_Y, WIDTH - _MARGIN, _AXIS_Y), fill=_BLACK, width=2
+    )
+
     points: list[tuple[float, float]] = []
     for i, bar in enumerate(bars):
         x = left + (i + 0.5) * col
@@ -229,23 +233,22 @@ def _draw_chart(draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView) -> None:
             _TEMP_BOTTOM - _TEMP_TOP
         )
         points.append((x, y))
-        # Precip bar from the baseline up; % label sits white inside a tall
+        # Precip bar rising from the axis; % label sits white inside a tall
         # enough bar (skip short bars where it would spill onto white paper).
         if bar.precip_pct > 0:
             h = bar.precip_pct / 100.0 * _PRECIP_MAX_H
             draw.rectangle(
-                (x - bar_w / 2, _PRECIP_BASE - h, x + bar_w / 2, _PRECIP_BASE),
-                fill=_BLUE,
+                (x - bar_w / 2, _AXIS_Y - h, x + bar_w / 2, _AXIS_Y), fill=_BLUE
             )
             if h >= 16:
                 draw.text(
-                    (x, _PRECIP_BASE - 3),
+                    (x, _AXIS_Y - 3),
                     str(bar.precip_pct),
                     font=fonts.font("label"),
                     fill=_WHITE,
                     anchor="ms",
                 )
-        # Hour label on top.
+        # Hour label below the axis.
         draw.text(
             (x, _HOUR_LABEL_Y),
             bar.hour_label,
@@ -265,6 +268,51 @@ def _draw_chart(draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView) -> None:
             fill=_BLACK,
             anchor="ms",
         )
+
+    _draw_sun_events(draw, image, view.chart.sun_events, left, col)
+
+
+def _draw_sun_events(
+    draw: ImageDraw.ImageDraw,
+    image: Image.Image,
+    events: list[viewmodel.SunEvent],
+    left: float,
+    col: float,
+) -> None:
+    """Marks sunrise/sunset with a notch on the axis and a boxed icon below it.
+
+    The icon sits in a white box that cleanly overpaints any hour label it lands
+    on; the time is drawn just below the box.
+    """
+    box_w, box_h = 26, _SUN_ICON + 4
+    for event in events:
+        x = round(left + (event.pos + 0.5) * col)
+        # Notch straddling the axis.
+        draw.line((x, _AXIS_Y - 4, x, _AXIS_Y + 3), fill=_BLACK, width=2)
+        # Boxed icon below the axis (the white fill occludes the hour label).
+        top = _AXIS_Y + 3
+        draw.rectangle(
+            (x - box_w // 2, top, x + box_w // 2, top + box_h),
+            fill=_WHITE,
+            outline=_BLACK,
+        )
+        glyph = icons.render(event.icon, _SUN_ICON)
+        image.paste(glyph, (x - _SUN_ICON // 2, top + 2), glyph)
+        # Time just below the box.
+        draw.text(
+            (x, top + box_h + 2),
+            event.label,
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="ma",
+        )
+        # Off-chart events get a right-pointing arrow ("still to come").
+        if event.out_of_bounds:
+            ax = x + box_w // 2 + 3
+            ay = top + box_h // 2
+            draw.polygon(
+                ((ax, ay - 4), (ax, ay + 4), (ax + 5, ay)), fill=_BLACK
+            )
 
 
 def _draw_chips(

@@ -53,6 +53,8 @@ SLUGS = (
     "sunrise",
     "sunset",
     "droplet",
+    "wind",
+    "air-quality",
 )
 
 type _Draw = ImageDraw.ImageDraw
@@ -215,6 +217,22 @@ def _droplet_icon(d: _Draw) -> None:
     _droplet(d, 8, 8, _B)
 
 
+def _wind(d: _Draw) -> None:
+    # Three flowing gust lines, each ending in a little curl.
+    d.line((2, 4, 10, 4), fill=_K)
+    d.arc((9, 2, 13, 6), start=270, end=120, fill=_K)
+    d.line((2, 8, 11, 8), fill=_K)
+    d.arc((10, 6, 14, 10), start=270, end=120, fill=_K)
+    d.line((2, 12, 8, 12), fill=_K)
+    d.arc((7, 10, 11, 14), start=270, end=120, fill=_K)
+
+
+def _air_quality(d: _Draw) -> None:
+    # Scattered particles suggesting air-quality / particulates.
+    for x, y in ((4, 4), (9, 5), (13, 4), (5, 9), (11, 10), (7, 13), (13, 13)):
+        d.ellipse((x - 1, y - 1, x + 1, y + 1), fill=_K)
+
+
 _DRAWERS = {
     "clear-day": _clear_day,
     "clear-night": _clear_night,
@@ -232,6 +250,8 @@ _DRAWERS = {
     "sunrise": _sunrise,
     "sunset": _sunset,
     "droplet": _droplet_icon,
+    "wind": _wind,
+    "air-quality": _air_quality,
 }
 
 

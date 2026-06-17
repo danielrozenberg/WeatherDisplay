@@ -26,10 +26,21 @@ class ChartBar:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class SunEvent:
+    """A sunrise/sunset marker placed on the chart's time axis."""
+
+    icon: str  # "sunrise" or "sunset"
+    label: str  # 12-hour time, e.g. "5:12a"
+    pos: float  # fractional hour index along the chart (0 .. len(bars) - 1)
+    out_of_bounds: bool = False  # True if pinned to the end with an arrow
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChartView:
     """The hourly chart as plain data (the renderer computes geometry)."""
 
     bars: list[ChartBar]
+    sun_events: list[SunEvent]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -55,8 +66,10 @@ class HeaderView:
     humidity: int
     uv_index: str  # e.g. "5" or "5.4"
     uv_label: str  # "Low" / "Moderate" / ...
-    sunrise: str  # "05:12"
-    sunset: str  # "21:18"
+    wind_value: str  # e.g. "NW 12"
+    wind_unit: str  # "km/h" or "mph"
+    aqi_value: str  # e.g. "42" or "--"
+    aqi_label: str  # e.g. "AQI Good"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -66,7 +79,7 @@ class DisplayView:
     header: HeaderView
     chart: ChartView
     chips: list[ChipView]
-    updated: str  # e.g. "Mon 07 Jun 2026 14:32"
+    updated: str  # e.g. "Mon 07 Jun 2026 2:32 PM"
     battery_pct: int
     battery_low: bool
 
@@ -95,7 +108,7 @@ def build_view(
             _build_chip(chip, metric=metric, today=today)
             for chip in report.days
         ],
-        updated=report.fetched_at.strftime("%a %d %b %Y %H:%M"),
+        updated=_updated_label(report.fetched_at),
         battery_pct=round(battery.percent) if battery else 0,
         battery_low=battery.low if battery else True,
     )
@@ -112,6 +125,8 @@ def _build_header(report: weather.WeatherReport, *, metric: bool) -> HeaderView:
         unit = "F"
         secondary = f"{round(report.temperature_c)}°C"
     condition = report.condition
+    wind = f"{_compass(report.wind_direction)} {round(report.wind_speed)}"
+    aqi = report.air_quality
     return HeaderView(
         temp_primary=str(primary),
         unit_primary=unit,
@@ -121,8 +136,10 @@ def _build_header(report: weather.WeatherReport, *, metric: bool) -> HeaderView:
         humidity=report.humidity,
         uv_index=_format_uv(report.uv_index),
         uv_label=_uv_label(report.uv_index),
-        sunrise=report.sunrise.strftime("%H:%M"),
-        sunset=report.sunset.strftime("%H:%M"),
+        wind_value=wind,
+        wind_unit="km/h" if metric else "mph",
+        aqi_value=str(aqi) if aqi is not None else "--",
+        aqi_label=_aqi_label(aqi),
     )
 
 
@@ -158,7 +175,50 @@ def _build_chart(report: weather.WeatherReport, *, metric: bool) -> ChartView:
                 precip_pct=_round_precip(point.precipitation_probability),
             )
         )
-    return ChartView(bars=bars)
+    return ChartView(bars=bars, sun_events=_sun_events(report))
+
+
+def _sun_events(report: weather.WeatherReport) -> list[SunEvent]:
+    """Places sunrise/sunset markers along the chart's time axis.
+
+    Events inside the window are positioned exactly. To keep one sunrise and one
+    sunset on screen, when only a single event is in view the next upcoming
+    event (its complement) is pinned to the right edge and flagged out-of-bounds
+    with an arrow.
+    """
+    hours = report.hours
+    if len(hours) < 2:
+        return []
+    start = hours[0].time
+    last = len(hours) - 1
+    moments: list[tuple[float, str, datetime.datetime]] = []
+    for icon, times in (
+        ("sunrise", report.sunrises),
+        ("sunset", report.sunsets),
+    ):
+        for when in times:
+            pos = (when - start).total_seconds() / 3600.0
+            moments.append((pos, icon, when))
+    moments.sort(key=lambda m: m[0])
+
+    events = [
+        SunEvent(icon=icon, label=_clock_short(when), pos=pos)
+        for pos, icon, when in moments
+        if 0.0 <= pos <= last
+    ]
+    if len(events) == 1:
+        nxt = next((m for m in moments if m[0] > last), None)
+        if nxt is not None:
+            _, icon, when = nxt
+            events.append(
+                SunEvent(
+                    icon=icon,
+                    label=_clock_short(when),
+                    pos=float(last),
+                    out_of_bounds=True,
+                )
+            )
+    return events
 
 
 def _round_precip(probability: int) -> int:
@@ -173,6 +233,20 @@ def _hour_label(when: datetime.datetime) -> str:
     return f"{hour}{suffix}"
 
 
+def _clock_short(when: datetime.datetime) -> str:
+    """Formats a time of day in compact 12-hour style, e.g. '5:12a'."""
+    hour = when.hour % 12 or 12
+    suffix = "a" if when.hour < 12 else "p"
+    return f"{hour}:{when.minute:02d}{suffix}"
+
+
+def _updated_label(when: datetime.datetime) -> str:
+    """Formats the update stamp in 12-hour style (e.g. '2:32 PM')."""
+    hour = when.hour % 12 or 12
+    suffix = "a" if when.hour < 12 else "p"
+    return f"{when:%A, %B %d, %Y}, {hour}:{when.minute:02d}{suffix}"
+
+
 def _weekday_label(day: datetime.date, today: datetime.date) -> str:
     """Returns 'Today' when ``day`` is ``today``, else a short weekday."""
     if day == today:
@@ -184,6 +258,31 @@ def _format_uv(uv: float) -> str:
     """Formats the UV index without a trailing '.0'."""
     rounded = round(uv, 1)
     return str(int(rounded)) if rounded.is_integer() else str(rounded)
+
+
+_COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def _compass(degrees: int) -> str:
+    """Maps a wind bearing in degrees to an 8-point compass abbreviation."""
+    return _COMPASS[round(degrees / 45) % 8]
+
+
+def _aqi_label(aqi: int | None) -> str:
+    """Maps a US AQI to its short category, prefixed 'AQI'."""
+    if aqi is None:
+        return "AQI n/a"
+    if aqi <= 50:
+        return "AQI Good"
+    if aqi <= 100:
+        return "AQI Moderate"
+    if aqi <= 150:
+        return "AQI Sensitive"
+    if aqi <= 200:
+        return "AQI Unhealthy"
+    if aqi <= 300:
+        return "AQI Very bad"
+    return "AQI Hazardous"
 
 
 def _uv_label(uv: float) -> str:

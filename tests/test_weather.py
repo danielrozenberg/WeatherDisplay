@@ -18,6 +18,8 @@ _PAYLOAD: weather.ForecastPayload = {
         "weather_code": 2,
         "uv_index": 5.2,
         "is_day": 1,
+        "wind_speed_10m": 12.0,
+        "wind_direction_10m": 315.0,
     },
     "hourly": {
         "time": [
@@ -74,15 +76,28 @@ def test_parse_sun_times(cfg: config_lib.Config) -> None:
     report = weather.parse(_PAYLOAD, cfg, now=_now(cfg))
     assert (report.sunrise.hour, report.sunrise.minute) == (4, 45)
     assert (report.sunset.hour, report.sunset.minute) == (21, 14)
+    # All forecast days are kept (for next-day sunrise notches).
+    assert len(report.sunrises) == 3
+    assert len(report.sunsets) == 3
 
 
-def test_parse_days(cfg: config_lib.Config) -> None:
+def test_parse_wind_and_air_quality(cfg: config_lib.Config) -> None:
+    report = weather.parse(_PAYLOAD, cfg, now=_now(cfg), air_quality=42)
+    assert report.wind_speed == 12.0
+    assert report.wind_direction == 315
+    assert report.air_quality == 42
+    # Air quality defaults to None when not supplied.
+    assert weather.parse(_PAYLOAD, cfg, now=_now(cfg)).air_quality is None
+
+
+def test_parse_days_start_tomorrow(cfg: config_lib.Config) -> None:
     report = weather.parse(_PAYLOAD, cfg, now=_now(cfg))
-    assert len(report.days) == 3
-    chip = report.days[1]
-    assert chip.weather_code == 61
-    assert chip.temp_max_c == 17.0
-    assert chip.precipitation_probability == 80
+    # Today (2026-06-06) is dropped; the strip starts tomorrow.
+    assert len(report.days) == 2
+    assert report.days[0].day == datetime.date(2026, 6, 7)
+    assert report.days[0].weather_code == 61
+    assert report.days[0].temp_max_c == 17.0
+    assert report.days[0].precipitation_probability == 80
 
 
 def test_day_chips_respects_limit(cfg: config_lib.Config) -> None:
@@ -93,7 +108,7 @@ def test_day_chips_respects_limit(cfg: config_lib.Config) -> None:
 
 def test_parse_malformed_response_raises(cfg: config_lib.Config) -> None:
     # A structurally-valid payload with empty daily arrays trips the guard
-    # (daily["sunrise"][0] -> IndexError -> ApiError "response shape").
+    # (empty sun-time lists -> ValueError -> ApiError "response shape").
     empty_daily: weather.DailyBlock = {
         "time": [],
         "weather_code": [],

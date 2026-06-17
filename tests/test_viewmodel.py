@@ -38,10 +38,13 @@ def _report(cfg: config_lib.Config, n_hours: int = 4) -> weather.WeatherReport:
         uv_index=5.0,
         weather_code=0,
         is_day=True,
-        sunrise=now.replace(hour=4, minute=45),
-        sunset=now.replace(hour=21, minute=14),
+        wind_speed=12.0,
+        wind_direction=315,
+        sunrises=[now.replace(hour=4, minute=45)],
+        sunsets=[now.replace(hour=21, minute=14)],
         hours=hours,
         days=days,
+        air_quality=42,
     )
 
 
