@@ -54,6 +54,17 @@ SATURATED_PALETTE = [
 # Number of selectable inks on the panel.
 _NUM_COLOURS = 6
 
+# Named pure-ink RGB tuples the renderer draws with (the DESATURATED anchors).
+# Painting only in these means the panel maps every pixel 1:1 to an ink with no
+# dithering; simulate_eink() then previews the muted colours the panel produces.
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+YELLOW = (255, 255, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
+INKS = (BLACK, WHITE, YELLOW, RED, BLUE, GREEN)
+
 
 def palette_blend(saturation: float) -> list[int]:
     """Blends the two driver palettes into a flat RGB palette.
