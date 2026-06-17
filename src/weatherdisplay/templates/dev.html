@@ -1,0 +1,86 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>WeatherDisplay dev</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0;
+         background: #2b2b2b; color: #ddd; }
+  header { padding: 12px 20px; background: #1c1c1c;
+           border-bottom: 1px solid #000; }
+  main { padding: 20px; }
+  .screen { width: 800px; height: 480px; border: 1px solid #000;
+            image-rendering: pixelated; background: #fff; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+         margin: 10px 0; }
+  a.btn, button { font: inherit; font-size: 13px; padding: 6px 12px;
+         border-radius: 6px; border: 1px solid #444; background: #333;
+         color: #eee; text-decoration: none; cursor: pointer; }
+  a.btn.active { background: #2d6; color: #000; border-color: #2d6; }
+  .drop { width: 220px; padding: 14px; border: 2px dashed #555;
+          border-radius: 8px; text-align: center; color: #aaa;
+          font-size: 13px; }
+  .drop.over { border-color: #2d6; color: #2d6; }
+  label.muted { color: #888; font-size: 12px; }
+</style></head>
+<body>
+<header><strong>WeatherDisplay</strong> &middot; design preview
+  &middot; <span class="muted">{{ meta }}</span></header>
+<main>
+  <div class="row">
+    {% for name in preset_names %}
+    <a class="btn {{ 'active' if name == preset else '' }}"
+       href="?preset={{ name }}&battery={{ battery }}">{{ name }}</a>
+    {% endfor %}
+  </div>
+  <div class="row">
+    <form method="get" style="display:flex;gap:8px;align-items:center">
+      <input type="hidden" name="preset" value="{{ preset }}">
+      <label class="muted">battery</label>
+      <input type="number" name="battery" min="0" max="100"
+             value="{{ battery }}" style="width:64px">
+      <button type="submit">set</button>
+    </form>
+    <form method="post" action="refetch">
+      <button type="submit">re-fetch live</button>
+    </form>
+  </div>
+  <img class="screen" id="screen" src="{{ img }}" alt="panel preview">
+  <div class="row">
+    <div class="drop" id="drop-title">Title font<br>
+      <label class="muted">{{ title_font }}</label>
+      <input type="file" id="file-title" accept=".ttf" hidden></div>
+    <div class="drop" id="drop-body">Body font<br>
+      <label class="muted">{{ body_font }}</label>
+      <input type="file" id="file-body" accept=".ttf" hidden></div>
+    <form method="post" action="font/reset">
+      <button type="submit">reset fonts</button>
+    </form>
+  </div>
+</main>
+<script>
+const img = document.getElementById("screen");
+const base = img.getAttribute("src");
+setInterval(() => { img.src = base + "&t=" + Date.now(); }, 1000);
+
+function wire(slot) {
+  const zone = document.getElementById("drop-" + slot);
+  const input = document.getElementById("file-" + slot);
+  const upload = (file) => {
+    const fd = new FormData(); fd.append("font", file);
+    fetch("font/" + slot, {method: "POST", body: fd})
+      .then(() => { img.src = base + "&t=" + Date.now(); });
+  };
+  zone.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => {
+    if (input.files[0]) upload(input.files[0]);
+  });
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault(); zone.classList.add("over");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault(); zone.classList.remove("over");
+    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+  });
+}
+wire("title"); wire("body");
+</script>
+</body></html>

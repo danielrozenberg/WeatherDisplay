@@ -165,7 +165,7 @@ class WeatherReport:
 def _session() -> requests.Session:
     """Builds a cached (1 h), auto-retrying requests session.
 
-    Caching mostly helps dev mode (livereload re-renders without re-fetching);
+    Caching mostly helps dev mode (the preview re-renders without re-fetching);
     the in-memory backend keeps it within the running process and leaves no
     files behind. Retry adds resilience against transient network blips.
 

@@ -1,191 +1,308 @@
-"""HTML rendering and headless-Chromium screenshotting.
+"""Direct Pillow rendering of the 800x480 panel image.
 
-`render_html` turns a `DisplayView` into an HTML string via Jinja2; `screenshot`
-loads that HTML in headless Chromium and captures an 800x480 PNG. `render_png`
-chains the two for the common case.
+Draws the dashboard with pixel fonts ([fonts.py](fonts.py)) and pixel-art icons
+([icons.py](icons.py)) using only the six panel inks, so the output is already
+on-palette and needs no dithering. This replaces the former HTML + headless
+Chromium screenshot pipeline.
 
-On a dev machine Playwright's bundled Chromium is used. On the Raspberry Pi we
-point Playwright at the system ``chromium-browser`` (installed by install.sh)
-via ``executable_path`` so no ARM browser download is needed, and add memory-
-friendly flags for low-RAM Pis (e.g. the Pi Zero 2 W).
+`render_image` builds a `PIL.Image`; `render_png` returns PNG bytes for the
+panel/display path. Both take the same `(report, battery, cfg)` as before.
 """
 
 from __future__ import annotations
 
-import functools
-import os
+import io
 import pathlib
-import shutil
-import tempfile
 
-import jinja2
-from playwright import sync_api
+from PIL import Image
+from PIL import ImageDraw
 
 from . import config as config_lib
-from . import errors
+from . import fonts
+from . import icons
 from . import palette
 from . import pisugar
 from . import viewmodel
 from . import weather
 
+WIDTH, HEIGHT = palette.EINK_SIZE
+
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
-_TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 _STATIC_DIR = _PACKAGE_DIR / "static"
 
-WEATHER_TEMPLATE = "weather.html.j2"
+# Inks (opaque RGB) used across the layout.
+_BLACK = palette.BLACK
+_WHITE = palette.WHITE
+_RED = palette.RED
+_BLUE = palette.BLUE
+_GREEN = palette.GREEN
 
-# Chromium flags safe on both desktop and the Pi. --no-sandbox is required when
-# running as root (the appliance does); the shm/gpu flags avoid crashes and OOM
-# on memory-constrained Pis like the Pi Zero 2 W.
-_CHROMIUM_ARGS = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--hide-scrollbars",
-    "--force-color-profile=srgb",
-]
-# Extra flag used only with the system browser (the Pi) to cut memory use.
-_PI_EXTRA_ARGS = ["--single-process"]
+_MARGIN = 14
 
-# System Chromium binaries to look for, in order of preference.
-_CHROMIUM_BINARIES = ("chromium-browser", "chromium", "chromium-browser-stable")
+# Hero block (current conditions, left) + stats panel (right).
+_HERO_Y = 44
+_HERO_ICON = 96
+_STATS_X = 432
+
+# Chart band.
+_CHART_TOP = 222
+_CHART_BOT = 360
+_HOUR_LABEL_Y = 226
+_TEMP_TOP = 250
+_TEMP_BOTTOM = 318
+_PRECIP_BASE = 352
+_PRECIP_MAX_H = 64
+_TEMP_PAD = 1.0
+
+# Day-chip strip.
+_CHIPS_TOP = 366
 
 
 def static_dir() -> pathlib.Path:
-    """Returns the path to the packaged static-assets directory."""
+    """Returns the packaged static-assets directory (fonts live here)."""
     return _STATIC_DIR
 
 
-def static_base_uri() -> str:
-    """Returns a ``file://`` base URL for the static directory."""
-    return _STATIC_DIR.as_uri()
+def render_image(
+    report: weather.WeatherReport,
+    battery: pisugar.BatteryStatus | None,
+    cfg: config_lib.Config,
+) -> Image.Image:
+    """Builds the 800x480 RGB panel image for a report."""
+    view = viewmodel.build_view(report, battery, cfg)
+    image = Image.new("RGB", (WIDTH, HEIGHT), _WHITE)
+    draw = ImageDraw.Draw(image)
 
-
-@functools.cache
-def _env() -> jinja2.Environment:
-    """Returns the (cached) Jinja2 environment for our templates."""
-    return jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
-        autoescape=jinja2.select_autoescape(["html", "xml", "j2"]),
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-
-
-def environment() -> jinja2.Environment:
-    """Returns the shared Jinja2 environment (used by the dev server)."""
-    return _env()
-
-
-def templates_dir() -> pathlib.Path:
-    """Returns the path to the packaged templates directory."""
-    return _TEMPLATES_DIR
-
-
-def render_html(
-    view: viewmodel.DisplayView, *, template: str = WEATHER_TEMPLATE
-) -> str:
-    """Renders a `DisplayView` to an HTML string.
-
-    Args:
-      view: The populated display view-model.
-      template: The template filename to render.
-
-    Returns:
-      The rendered HTML.
-
-    Raises:
-      RenderError: If the template cannot be found or rendered.
-    """
-    try:
-        return _env().get_template(template).render(view=view)
-    except jinja2.TemplateError as exc:
-        raise errors.RenderError(f"template {template!r}: {exc}") from exc
-
-
-def default_chromium_path() -> str | None:
-    """Returns the system Chromium path, or None to use Playwright's bundle.
-
-    Honours the ``WEATHERDISPLAY_CHROMIUM`` environment variable first, then
-    searches ``PATH`` for a known Chromium binary.
-    """
-    override = os.environ.get("WEATHERDISPLAY_CHROMIUM")
-    if override:
-        return override
-    for name in _CHROMIUM_BINARIES:
-        found = shutil.which(name)
-        if found:
-            return found
-    return None
-
-
-def screenshot(html: str, *, executable_path: str | None = None) -> bytes:
-    """Renders ``html`` in headless Chromium and returns an 800x480 PNG.
-
-    Args:
-      html: The HTML document to render.
-      executable_path: System Chromium to use, or None for the bundled browser.
-
-    Returns:
-      PNG image bytes at the native panel resolution.
-
-    Raises:
-      RenderError: If the browser fails to launch or capture the page.
-    """
-    width, height = palette.EINK_SIZE
-    args = list(_CHROMIUM_ARGS)
-    if executable_path:
-        args += _PI_EXTRA_ARGS
-
-    with tempfile.TemporaryDirectory(prefix="weatherdisplay-") as tmp:
-        page_path = pathlib.Path(tmp) / "page.html"
-        page_path.write_text(html, encoding="utf-8")
-        try:
-            with sync_api.sync_playwright() as play:
-                browser = play.chromium.launch(
-                    headless=True,
-                    args=args,
-                    executable_path=executable_path,
-                )
-                try:
-                    page = browser.new_page(
-                        viewport={"width": width, "height": height},
-                        device_scale_factor=1,
-                    )
-                    page.goto(page_path.as_uri(), wait_until="networkidle")
-                    # Let web fonts finish loading before the capture.
-                    page.evaluate("() => document.fonts.ready")
-                    png = page.screenshot(
-                        clip={"x": 0, "y": 0, "width": width, "height": height}
-                    )
-                finally:
-                    browser.close()
-        except sync_api.Error as exc:
-            raise errors.RenderError(
-                f"Chromium screenshot failed: {exc}"
-            ) from exc
-    return png
+    draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), outline=_BLACK, width=2)
+    _draw_topbar(draw, view)
+    _draw_hero(draw, image, view)
+    _draw_stats(draw, image, view)
+    _draw_chart(draw, view)
+    _draw_chips(draw, image, view)
+    return image
 
 
 def render_png(
     report: weather.WeatherReport,
     battery: pisugar.BatteryStatus | None,
     cfg: config_lib.Config,
-    *,
-    executable_path: str | None = None,
 ) -> bytes:
-    """Builds the view, renders HTML and captures the PNG in one call.
+    """Renders the panel image to PNG bytes."""
+    buffer = io.BytesIO()
+    render_image(report, battery, cfg).save(buffer, format="PNG")
+    return buffer.getvalue()
 
-    Args:
-      report: The parsed weather report.
-      battery: The battery snapshot, or None if unavailable.
-      cfg: The loaded configuration.
-      executable_path: System Chromium to use, or None for the bundle.
 
-    Returns:
-      PNG image bytes at the native panel resolution.
-    """
-    view = viewmodel.build_view(
-        report, battery, cfg, static_base=static_base_uri()
+# --------------------------------------------------------------------------- #
+# Regions
+# --------------------------------------------------------------------------- #
+def _draw_topbar(
+    draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView
+) -> None:
+    """Draws the 'Updated …' line and the battery gauge."""
+    draw.text(
+        (_MARGIN + 4, 16),
+        f"UPDATED {view.updated}",
+        font=fonts.font("tiny"),
+        fill=_BLACK,
+        anchor="lm",
     )
-    return screenshot(render_html(view), executable_path=executable_path)
+    _draw_battery(
+        draw, WIDTH - _MARGIN - 4, 16, view.battery_pct, view.battery_low
+    )
+    draw.line((_MARGIN, 36, WIDTH - _MARGIN, 36), fill=_BLACK, width=2)
+
+
+def _draw_battery(
+    draw: ImageDraw.ImageDraw, right: int, cy: int, pct: int, low: bool
+) -> None:
+    """Draws a pixel battery gauge whose right edge sits at ``right``."""
+    body_w, body_h = 38, 18
+    x1, y0 = right - 3, cy - body_h // 2
+    x0, y1 = x1 - body_w, y0 + body_h
+    draw.rectangle((x0, y0, x1, y1), outline=_BLACK, width=2)
+    draw.rectangle((x1 + 1, cy - 4, x1 + 3, cy + 4), fill=_BLACK)  # nub
+    inner = body_w - 8
+    fill_w = round(inner * max(0, min(100, pct)) / 100)
+    if fill_w > 0:
+        colour = _RED if low else _GREEN
+        draw.rectangle((x0 + 3, y0 + 3, x0 + 3 + fill_w, y1 - 3), fill=colour)
+
+
+def _draw_hero(
+    draw: ImageDraw.ImageDraw, image: Image.Image, view: viewmodel.DisplayView
+) -> None:
+    """Draws the big condition icon, temperature, and condition label."""
+    header = view.header
+    image.paste(
+        icons.render(header.condition_icon, _HERO_ICON),
+        (_MARGIN + 6, _HERO_Y),
+        icons.render(header.condition_icon, _HERO_ICON),
+    )
+    tx = _MARGIN + 6 + _HERO_ICON + 16
+    big = fonts.font("temp-hero")
+    draw.text(
+        (tx, _HERO_Y + 4), header.temp_primary, font=big, fill=_RED, anchor="la"
+    )
+    num_w = draw.textlength(header.temp_primary, font=big)
+    draw.text(
+        (tx + num_w + 6, _HERO_Y + 14),
+        f"°{header.unit_primary}",
+        font=fonts.font("temp-unit"),
+        fill=_RED,
+        anchor="la",
+    )
+    draw.text(
+        (tx, _HERO_Y + 104),
+        header.temp_secondary,
+        font=fonts.font("secondary"),
+        fill=_BLACK,
+        anchor="la",
+    )
+    draw.text(
+        (tx, _HERO_Y + 140),
+        header.condition_label,
+        font=fonts.font("condition"),
+        fill=_BLACK,
+        anchor="la",
+    )
+
+
+def _draw_stats(
+    draw: ImageDraw.ImageDraw, image: Image.Image, view: viewmodel.DisplayView
+) -> None:
+    """Draws the 2x2 stats panel (humidity, UV, sunrise, sunset)."""
+    header = view.header
+    cells = (
+        ("humidity", f"{header.humidity}%", "Humidity"),
+        ("uv", header.uv_index, f"UV {header.uv_label}"),
+        ("sunrise", header.sunrise, "Sunrise"),
+        ("sunset", header.sunset, "Sunset"),
+    )
+    col_w, row_h = 178, 74
+    for i, (slug, value, label) in enumerate(cells):
+        cx = _STATS_X + (i % 2) * col_w
+        cy = _HERO_Y + (i // 2) * row_h
+        image.paste(
+            icons.render(slug, 32), (cx, cy + 8), icons.render(slug, 32)
+        )
+        draw.text(
+            (cx + 42, cy + 6),
+            value,
+            font=fonts.font("value"),
+            fill=_BLACK,
+            anchor="la",
+        )
+        draw.text(
+            (cx + 42, cy + 42),
+            label,
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="la",
+        )
+
+
+def _draw_chart(draw: ImageDraw.ImageDraw, view: viewmodel.DisplayView) -> None:
+    """Draws the hourly temperature line and precipitation bars."""
+    draw.line(
+        (_MARGIN, _CHART_TOP, WIDTH - _MARGIN, _CHART_TOP), fill=_BLACK, width=2
+    )
+    draw.line(
+        (_MARGIN, _CHART_BOT, WIDTH - _MARGIN, _CHART_BOT), fill=_BLACK, width=2
+    )
+
+    bars = view.chart.bars
+    count = len(bars)
+    if count == 0:
+        return
+    left, right = _MARGIN + 6, WIDTH - _MARGIN - 6
+    col = (right - left) / count
+    lo = min(b.temp_value for b in bars) - _TEMP_PAD
+    hi = max(b.temp_value for b in bars) + _TEMP_PAD
+    span = (hi - lo) or 1.0
+    bar_w = max(4, int(col * 0.5))
+
+    points: list[tuple[float, float]] = []
+    for i, bar in enumerate(bars):
+        x = left + (i + 0.5) * col
+        y = _TEMP_BOTTOM - (bar.temp_value - lo) / span * (
+            _TEMP_BOTTOM - _TEMP_TOP
+        )
+        points.append((x, y))
+        # Precip bar from the baseline up; % label sits white inside a tall
+        # enough bar (skip short bars where it would spill onto white paper).
+        if bar.precip_pct > 0:
+            h = bar.precip_pct / 100.0 * _PRECIP_MAX_H
+            draw.rectangle(
+                (x - bar_w / 2, _PRECIP_BASE - h, x + bar_w / 2, _PRECIP_BASE),
+                fill=_BLUE,
+            )
+            if h >= 16:
+                draw.text(
+                    (x, _PRECIP_BASE - 3),
+                    str(bar.precip_pct),
+                    font=fonts.font("label"),
+                    fill=_WHITE,
+                    anchor="ms",
+                )
+        # Hour label on top.
+        draw.text(
+            (x, _HOUR_LABEL_Y),
+            bar.hour_label,
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="ma",
+        )
+
+    if len(points) > 1:
+        draw.line(points, fill=_RED, width=3, joint="curve")
+    for i, (x, y) in enumerate(points):
+        draw.rectangle((x - 2, y - 2, x + 2, y + 2), fill=_RED)
+        draw.text(
+            (x, y - 8),
+            bars[i].temp_label,
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="ms",
+        )
+
+
+def _draw_chips(
+    draw: ImageDraw.ImageDraw, image: Image.Image, view: viewmodel.DisplayView
+) -> None:
+    """Draws the day-chip strip along the bottom."""
+    chips = view.chips
+    count = len(chips)
+    if count == 0:
+        return
+    left, right = _MARGIN, WIDTH - _MARGIN
+    cell = (right - left) / count
+    for i, chip in enumerate(chips):
+        cx = left + (i + 0.5) * cell
+        if i > 0:
+            x = round(left + i * cell)
+            draw.line((x, _CHIPS_TOP + 4, x, HEIGHT - _MARGIN), fill=_BLACK)
+        draw.text(
+            (cx, _CHIPS_TOP),
+            chip.label,
+            font=fonts.font("chip-day"),
+            fill=_BLACK,
+            anchor="ma",
+        )
+        glyph = icons.render(chip.icon, 32)
+        image.paste(glyph, (round(cx) - 16, _CHIPS_TOP + 20), glyph)
+        draw.text(
+            (cx, _CHIPS_TOP + 58),
+            f"{chip.high} {chip.low}",
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="ma",
+        )
+        if chip.precip_pct > 0:
+            draw.text(
+                (cx, _CHIPS_TOP + 78),
+                f"{chip.precip_pct}%",
+                font=fonts.font("label"),
+                fill=_BLUE,
+                anchor="ma",
+            )

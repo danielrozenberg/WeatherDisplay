@@ -51,7 +51,7 @@ class ApiError(WeatherDisplayError):
 
 
 class RenderError(WeatherDisplayError):
-    """The HTML could not be rendered/screenshotted into an image."""
+    """The panel image could not be rendered."""
 
     headline = "Render error"
 

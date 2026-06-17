@@ -46,7 +46,7 @@ def _report(cfg: config_lib.Config, n_hours: int = 4) -> weather.WeatherReport:
 
 
 def test_header_metric(cfg: config_lib.Config) -> None:
-    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    view = viewmodel.build_view(_report(cfg), None, cfg)
     assert view.header.temp_primary == "14"
     assert view.header.unit_primary == "C"
     assert view.header.temp_secondary == "57°F"
@@ -55,50 +55,42 @@ def test_header_metric(cfg: config_lib.Config) -> None:
 
 def test_header_imperial(cfg: config_lib.Config) -> None:
     cfg = dataclasses.replace(cfg, primary_unit="imperial")
-    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    view = viewmodel.build_view(_report(cfg), None, cfg)
     assert view.header.unit_primary == "F"
     assert view.header.temp_primary == "57"
     assert view.header.temp_secondary == "14°C"
 
 
 def test_first_chip_is_today(cfg: config_lib.Config) -> None:
-    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    view = viewmodel.build_view(_report(cfg), None, cfg)
     assert view.chips[0].label == "Today"
     assert view.chips[1].label != "Today"
 
 
 def test_battery_none_is_low(cfg: config_lib.Config) -> None:
-    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s")
+    view = viewmodel.build_view(_report(cfg), None, cfg)
     assert view.battery_low is True
     assert view.battery_pct == 0
 
 
 def test_battery_passthrough(cfg: config_lib.Config) -> None:
     battery = pisugar.BatteryStatus(percent=80.0, plugged=False)
-    view = viewmodel.build_view(_report(cfg), battery, cfg, static_base="/s")
+    view = viewmodel.build_view(_report(cfg), battery, cfg)
     assert view.battery_pct == 80
     assert view.battery_low is False
 
 
-def test_static_base_trailing_slash_stripped(cfg: config_lib.Config) -> None:
-    view = viewmodel.build_view(_report(cfg), None, cfg, static_base="/s/")
-    assert view.static_base == "/s"
-
-
-def test_chart_geometry_within_bounds(cfg: config_lib.Config) -> None:
-    view = viewmodel.build_view(
-        _report(cfg, n_hours=4), None, cfg, static_base="/s"
-    )
+def test_chart_bars_carry_plot_data(cfg: config_lib.Config) -> None:
+    view = viewmodel.build_view(_report(cfg, n_hours=4), None, cfg)
     assert len(view.chart.bars) == 4
     for bar in view.chart.bars:
-        assert 0 <= bar.x <= viewmodel.CHART_W
-        assert viewmodel._TEMP_TOP <= bar.temp_y <= viewmodel._TEMP_BOTTOM
-        assert bar.precip_h >= 0
-    assert view.chart.temp_points.count(",") == 4
+        assert bar.hour_label  # non-empty
+        assert bar.temp_label.endswith("°")
+        assert isinstance(bar.temp_value, float)
+        assert bar.precip_pct % 10 == 0  # rounded to the nearest 10
 
 
 def test_empty_chart_is_safe(cfg: config_lib.Config) -> None:
     report = dataclasses.replace(_report(cfg), hours=[])
-    view = viewmodel.build_view(report, None, cfg, static_base="/s")
+    view = viewmodel.build_view(report, None, cfg)
     assert view.chart.bars == []
-    assert view.chart.temp_points == ""

@@ -1,8 +1,8 @@
 """WMO weather-code interpretation.
 
 Open-Meteo reports conditions as WMO weather codes (WW). This maps each code to
-a short human label and an icon slug. Icon slugs correspond to SVG files in
-``static/icons/<slug>.svg`` (day/night variants for clear & partly-cloudy).
+a short human label and an icon slug. Icon slugs are drawn by ``icons.py``
+(day/night variants for clear & partly-cloudy).
 
 Reference: https://open-meteo.com/en/docs (WMO Weather interpretation codes).
 """
@@ -18,7 +18,7 @@ class Condition:
 
     code: int
     label: str
-    #: Icon slug; ``static/icons/<icon>.svg`` must exist.
+    #: Icon slug drawn by ``icons.py`` (see ``icons.SLUGS``).
     icon: str
 
 

@@ -53,9 +53,7 @@ def update(cfg: config_lib.Config) -> None:
         battery = _read_battery(sugar, log)
         log.info("fetching weather for %.3f, %.3f", cfg.latitude, cfg.longitude)
         report = weather.fetch(cfg)
-        png = render.render_png(
-            report, battery, cfg, executable_path=render.default_chromium_path()
-        )
+        png = render.render_png(report, battery, cfg)
         display.show(png, cfg.saturation, last_image_path=last_image)
         log.info("display updated")
     except errors.WeatherDisplayError as exc:
