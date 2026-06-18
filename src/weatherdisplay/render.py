@@ -148,7 +148,11 @@ def _draw_hero(
     tx = _MARGIN + 6 + _HERO_ICON + 16
     big = fonts.font("temp-hero")
     draw.text(
-        (tx, _HERO_Y + 24), header.temp_primary, font=big, fill=_RED, anchor="la"
+        (tx, _HERO_Y + 24),
+        header.temp_primary,
+        font=big,
+        fill=_RED,
+        anchor="la",
     )
     num_w = draw.textlength(header.temp_primary, font=big)
     unit = f"°{header.unit_primary}"
