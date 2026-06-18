@@ -23,7 +23,7 @@ def test_every_role_resolves() -> None:
 
 
 def test_slot_override_and_clear() -> None:
-    other = render.static_dir() / "fonts" / "PixelOperatorMono.ttf"
+    other = render.static_dir() / "fonts" / "HomeVideo-Regular.ttf"
     default = fonts.current_path("title")
     assert other != default
     try:

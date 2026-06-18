@@ -1,0 +1,23 @@
+PixelPurl
+Designer: HipFonts
+Source: https://www.1001fonts.com/pixelpurl-font.html
+
+License: 1001Fonts Free For Personal Use License (FFP)
+https://www.1001fonts.com/licenses/ffp.html
+
+Summary of the FFP terms:
+  1. Copyright   - the typeface is the intellectual property of its author.
+  2. Personal use - free for personal use (the usage must not be racist or
+                    illegal), e.g. personal projects, recreational sites,
+                    prints for non-profits.
+  3. Commercial use - NOT allowed without prior written permission from the
+                      author. This covers anything generating income
+                      (business logos, paid merchandise, freelance work, etc.).
+  4. Modification - the typeface may not be modified without the author's
+                    written permission.
+  5. Conversion  - may be converted to WOFF/SVG/EOT if otherwise unmodified.
+  6. Distribution - free sharing in the original zip is permitted; selling or
+                    publishing requires the author's permission.
+  7. Embedding   - may be embedded in personal-use applications that do not
+                    redistribute or offer the typeface for download.
+  8. Disclaimer  - provided "as is" with no warranty.

@@ -73,6 +73,11 @@ def render_image(
     view = viewmodel.build_view(report, battery, cfg)
     image = Image.new("RGB", (WIDTH, HEIGHT), _WHITE)
     draw = ImageDraw.Draw(image)
+    # Render text bilevel (no anti-aliasing): the panel has only six inks, so a
+    # font's anti-aliased edge pixels would land off-palette. This keeps every
+    # glyph on-ink regardless of the font or size in a slot (incl. dev-mode
+    # uploads), matching the pixel-art look.
+    draw.fontmode = "1"
 
     draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), outline=_BLACK, width=2)
     _draw_topbar(draw, view)
@@ -137,33 +142,36 @@ def _draw_hero(
     header = view.header
     image.paste(
         icons.render(header.condition_icon, _HERO_ICON),
-        (_MARGIN + 6, _HERO_Y),
+        (_MARGIN + 6, _HERO_Y + 26),
         icons.render(header.condition_icon, _HERO_ICON),
     )
     tx = _MARGIN + 6 + _HERO_ICON + 16
     big = fonts.font("temp-hero")
     draw.text(
-        (tx, _HERO_Y + 4), header.temp_primary, font=big, fill=_RED, anchor="la"
+        (tx, _HERO_Y + 24), header.temp_primary, font=big, fill=_RED, anchor="la"
     )
     num_w = draw.textlength(header.temp_primary, font=big)
+    unit = f"°{header.unit_primary}"
+    unit_font = fonts.font("temp-unit")
     draw.text(
-        (tx + num_w + 6, _HERO_Y + 14),
-        f"°{header.unit_primary}",
-        font=fonts.font("temp-unit"),
+        (tx + num_w + 6, _HERO_Y + 36),
+        unit,
+        font=unit_font,
         fill=_RED,
         anchor="la",
     )
-    sec_font = fonts.font("secondary")
+    # Alternate-unit temp on the same top line, just right of the °unit.
+    unit_w = draw.textlength(unit, font=unit_font)
     draw.text(
-        (tx, _HERO_Y + 104),
+        (tx + num_w + 6 + unit_w + 16, _HERO_Y + 36),
         header.temp_secondary,
-        font=sec_font,
+        font=fonts.font("secondary"),
         fill=_BLACK,
         anchor="la",
     )
-    sec_w = draw.textlength(header.temp_secondary, font=sec_font)
+    # Condition label below, left-aligned with the temperature.
     draw.text(
-        (tx + sec_w + 16, _HERO_Y + 104),
+        (tx, _HERO_Y + 92),
         header.condition_label,
         font=fonts.font("condition"),
         fill=_BLACK,
@@ -189,15 +197,18 @@ def _draw_stats(
         image.paste(
             icons.render(slug, 32), (cx, cy + 8), icons.render(slug, 32)
         )
+        # Big value beside the icon; caption spans the full cell width on the
+        # row below (indenting it past the icon would run long labels off the
+        # panel at the body font's 20px size).
         draw.text(
-            (cx + 42, cy + 6),
+            (cx + 42, cy + 4),
             value,
             font=fonts.font("value"),
             fill=_BLACK,
             anchor="la",
         )
         draw.text(
-            (cx + 42, cy + 42),
+            (cx, cy + 48),
             label,
             font=fonts.font("label"),
             fill=_BLACK,
@@ -339,12 +350,22 @@ def _draw_chips(
         )
         glyph = icons.render(chip.icon, 32)
         image.paste(glyph, (round(cx) - 16, _CHIPS_TOP + 20), glyph)
+        # High/low drawn as two values hugging the cell centre (a joined
+        # string's space sits too wide at the body font's 20px size).
+        gap = 3  # half the gap between high and low
         draw.text(
-            (cx, _CHIPS_TOP + 58),
-            f"{chip.high} {chip.low}",
+            (cx - gap, _CHIPS_TOP + 58),
+            chip.high,
             font=fonts.font("label"),
             fill=_BLACK,
-            anchor="ma",
+            anchor="ra",
+        )
+        draw.text(
+            (cx + gap, _CHIPS_TOP + 58),
+            chip.low,
+            font=fonts.font("label"),
+            fill=_BLACK,
+            anchor="la",
         )
         if chip.precip_pct > 0:
             draw.text(

@@ -53,11 +53,11 @@ def test_unknown_font_slot_is_404(cfg: config_lib.Config) -> None:
 def test_font_upload_swaps_and_reports_name(cfg: config_lib.Config) -> None:
     client = dev_server.create_app(cfg).test_client()
     try:
-        resp = _upload(client, "body", "PixelOperatorMono.ttf")
+        resp = _upload(client, "body", "PixelPurl.ttf")
         assert resp.status_code == 200
-        assert resp.get_json()["name"] == "PixelOperatorMono.ttf"
+        assert resp.get_json()["name"] == "PixelPurl.ttf"
         # The index reflects the uploaded name, and rendering still works.
-        assert b"PixelOperatorMono.ttf" in client.get("/").data
+        assert b"PixelPurl.ttf" in client.get("/").data
         assert client.get("/screen.png?preset=rainy").status_code == 200
     finally:
         fonts.clear_override("body")
@@ -69,10 +69,10 @@ def test_font_upload_twice_does_not_crash(cfg: config_lib.Config) -> None:
     # now lands on a unique path, so re-swapping is safe.
     client = dev_server.create_app(cfg).test_client()
     try:
-        for name in ("PixelOperatorMono.ttf", "PixelOperatorMono-Bold.ttf"):
+        for name in ("PixelPurl.ttf", "HomeVideo-Regular.ttf"):
             assert _upload(client, "body", name).status_code == 200
             assert client.get("/screen.png?preset=rainy").status_code == 200
-        assert fonts.current_name("body") == "PixelOperatorMono-Bold.ttf"
+        assert fonts.current_name("body") == "HomeVideo-Regular.ttf"
     finally:
         fonts.clear_override("body")
 
@@ -85,4 +85,4 @@ def test_font_upload_rejects_non_font(cfg: config_lib.Config) -> None:
     )
     assert resp.status_code == 400
     # The slot stays on its bundled default.
-    assert fonts.current_name("body") == "PixelOperator.ttf"
+    assert fonts.current_name("body") == "HomeVideo-Regular.ttf"

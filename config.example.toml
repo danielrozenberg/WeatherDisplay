@@ -24,10 +24,10 @@ primary_unit = "metric"
 saturation = 0.5
 
 # Number of hourly points in the temperature/precipitation bar chart (1..48).
-chart_hours = 16
+chart_hours = 14
 
 # Number of day chips in the multi-day strip (1..16).
-day_chips = 10
+day_chips = 9
 
 # --- Power / scheduling ----------------------------------------------------- #
 # How often the device wakes, updates, and shuts down again (hours).

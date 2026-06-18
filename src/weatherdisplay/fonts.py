@@ -7,8 +7,9 @@ one display face, one text face), so the whole look changes by swapping at most
 two TTFs. Dev mode can override a slot at runtime with an uploaded font for
 instant comparison (see ``set_override``).
 
-The bundled default is Pixel Operator (CC0). It is a pixel font designed on a
-16px grid, so sizes are kept to multiples of 16 to stay crisp.
+The bundled defaults are pixel fonts: PixelPurl for the title slot and Home
+Video for the body slot. Like all pixel fonts they render crispest when sized
+on their own pixel grid, so sizes are kept to multiples of 16.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ _FONTS_DIR = pathlib.Path(__file__).resolve().parent / "static" / "fonts"
 
 # Default TTF for each slot.
 _DEFAULT_SLOT_FONTS: dict[Slot, pathlib.Path] = {
-    "title": _FONTS_DIR / "PixelOperator-Bold.ttf",
-    "body": _FONTS_DIR / "PixelOperator.ttf",
+    "title": _FONTS_DIR / "PixelPurl.ttf",
+    "body": _FONTS_DIR / "HomeVideo-Regular.ttf",
 }
 
 # Runtime overrides set by dev mode (slot -> TTF path); None uses the default.
@@ -35,17 +36,18 @@ _overrides: dict[Slot, pathlib.Path | None] = {"title": None, "body": None}
 # on-disk temp path does not preserve).
 _override_names: dict[Slot, str] = {"title": "", "body": ""}
 
-# Logical role -> (slot, pixel size). Sizes are multiples of 16 (Pixel
-# Operator's design grid) so the glyphs land on whole pixels.
+# Logical role -> (slot, pixel size). Sizes match each pixel font's design grid
+# so glyphs land on whole pixels: the title face (PixelPurl) is a 16px grid, the
+# body face (Home Video) a 20px grid, so body roles use multiples of 20.
 _ROLES: dict[str, tuple[Slot, int]] = {
     "temp-hero": ("title", 96),  # the big current temperature
     "temp-unit": ("title", 32),  # its °C/°F unit
     "condition": ("title", 32),  # current-condition label
-    "secondary": ("body", 32),  # the other-unit temperature
-    "value": ("body", 32),  # stat values (humidity, UV, sun times)
+    "secondary": ("body", 40),  # the other-unit temperature
+    "value": ("body", 40),  # stat values (humidity, UV, sun times)
     "chip-day": ("title", 16),  # weekday on a day chip
-    "label": ("body", 16),  # stat labels, hour labels, chip temps
-    "tiny": ("body", 16),  # updated text, precip %
+    "label": ("body", 20),  # stat labels, hour labels, chip temps
+    "tiny": ("body", 20),  # updated text, precip %
 }
 
 
