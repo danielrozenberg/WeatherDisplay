@@ -15,6 +15,7 @@ import io
 import logging
 import pathlib
 import tempfile
+import uuid
 
 import flask
 import werkzeug
@@ -75,8 +76,8 @@ def create_app(cfg: config_lib.Config) -> flask.Flask:
             preset_names=("live", *presets.names()),
             battery=pct,
             img=img,
-            title_font=fonts.current_path("title").name,
-            body_font=fonts.current_path("body").name,
+            title_font=fonts.current_name("title"),
+            body_font=fonts.current_name("body"),
         )
 
     @app.route("/screen.png")
@@ -104,11 +105,18 @@ def create_app(cfg: config_lib.Config) -> flask.Flask:
         if upload is None:
             flask.abort(400)
         _FONT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        path = _FONT_UPLOAD_DIR / f"{target}.ttf"
+        # A fresh path per upload: the font cache keeps the previous file open,
+        # so overwriting a reused path would corrupt the still-cached font and
+        # crash rendering. A unique name also forces a cache miss -> reload.
+        path = _FONT_UPLOAD_DIR / f"{target}-{uuid.uuid4().hex}.ttf"
         upload.save(path)
-        fonts.set_override(target, path)
-        _log.info("hot-swapped %s font -> %s", target, upload.filename)
-        return flask.Response(status=204)
+        if not fonts.is_valid(path):
+            path.unlink(missing_ok=True)
+            flask.abort(400, "uploaded file is not a usable .ttf font")
+        name = upload.filename or path.name
+        fonts.set_override(target, path, name=name)
+        _log.info("hot-swapped %s font -> %s", target, name)
+        return flask.jsonify(slot=target, name=name)
 
     @app.route("/font/reset", methods=["POST"])
     def reset_fonts() -> werkzeug.Response:

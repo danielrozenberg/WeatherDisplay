@@ -45,10 +45,10 @@
   <img class="screen" id="screen" src="{{ img }}" alt="panel preview">
   <div class="row">
     <div class="drop" id="drop-title">Title font<br>
-      <label class="muted">{{ title_font }}</label>
+      <label class="muted" id="name-title">{{ title_font }}</label>
       <input type="file" id="file-title" accept=".ttf" hidden></div>
     <div class="drop" id="drop-body">Body font<br>
-      <label class="muted">{{ body_font }}</label>
+      <label class="muted" id="name-body">{{ body_font }}</label>
       <input type="file" id="file-body" accept=".ttf" hidden></div>
     <form method="post" action="font/reset">
       <button type="submit">reset fonts</button>
@@ -66,7 +66,15 @@ function wire(slot) {
   const upload = (file) => {
     const fd = new FormData(); fd.append("font", file);
     fetch("font/" + slot, {method: "POST", body: fd})
-      .then(() => { img.src = base + "&t=" + Date.now(); });
+      .then((r) => {
+        if (!r.ok) throw new Error("upload rejected (HTTP " + r.status + ")");
+        return r.json();
+      })
+      .then((data) => {
+        document.getElementById("name-" + slot).textContent = data.name;
+        img.src = base + "&t=" + Date.now();
+      })
+      .catch((err) => alert("Font upload failed: " + err.message));
   };
   zone.addEventListener("click", () => input.click());
   input.addEventListener("change", () => {

@@ -31,6 +31,9 @@ _DEFAULT_SLOT_FONTS: dict[Slot, pathlib.Path] = {
 
 # Runtime overrides set by dev mode (slot -> TTF path); None uses the default.
 _overrides: dict[Slot, pathlib.Path | None] = {"title": None, "body": None}
+# Display name for an active override (e.g. the uploaded filename, which the
+# on-disk temp path does not preserve).
+_override_names: dict[Slot, str] = {"title": "", "body": ""}
 
 # Logical role -> (slot, pixel size). Sizes are multiples of 16 (Pixel
 # Operator's design grid) so the glyphs land on whole pixels.
@@ -69,15 +72,49 @@ def current_path(slot: Slot) -> pathlib.Path:
     return _overrides[slot] or _DEFAULT_SLOT_FONTS[slot]
 
 
-def set_override(slot: Slot, path: pathlib.Path) -> None:
-    """Points ``slot`` at an arbitrary TTF (used by dev mode hot-swapping)."""
+def current_name(slot: Slot) -> str:
+    """Returns the display name of the font in use for ``slot``.
+
+    For an override this is the name given to ``set_override`` (e.g. the
+    original uploaded filename); otherwise the bundled font's filename.
+    """
+    if _overrides[slot] is not None:
+        return _override_names[slot]
+    return _DEFAULT_SLOT_FONTS[slot].name
+
+
+def set_override(
+    slot: Slot, path: pathlib.Path, name: str | None = None
+) -> None:
+    """Points ``slot`` at an arbitrary TTF (used by dev mode hot-swapping).
+
+    ``name`` is the label shown for the override (defaults to the path's
+    filename). Pass a fresh, unique ``path`` per swap: a font cached for an
+    earlier path keeps that file open, so reusing the path and overwriting it
+    can corrupt the still-cached font.
+    """
     if slot not in _overrides:
         raise ValueError(
             f"unknown font slot {slot!r}; expected one of {slots()}"
         )
     _overrides[slot] = path
+    _override_names[slot] = name or path.name
 
 
 def clear_override(slot: Slot) -> None:
     """Restores ``slot`` to its bundled default font."""
     _overrides[slot] = None
+    _override_names[slot] = ""
+
+
+def is_valid(path: pathlib.Path) -> bool:
+    """Reports whether ``path`` can be loaded as a TrueType font.
+
+    Lets dev mode reject a bad upload before it becomes a slot override that
+    would crash every later render.
+    """
+    try:
+        ImageFont.truetype(str(path), 16)
+    except OSError:
+        return False
+    return True
