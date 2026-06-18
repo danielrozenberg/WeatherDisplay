@@ -25,14 +25,17 @@ MIN_SWAP_KB=900000  # ~900 MB; headroom for native pip builds on low-RAM Pis
 
 # Runtime + build needs. fonts-dejavu-core is the error-banner fallback font;
 # python3 (>= 3.13 on Debian 13 "trixie") plus python3-venv give us the
-# interpreter and the venv module; the small toolchain + headers let pip build
-# any sdist-only wheels (e.g. Pillow on architectures without prebuilt wheels).
-# We use the OS Python rather than compiling our own, so there are no CPython
-# build dependencies here.
+# interpreter and the venv module. numpy and Pillow (python3-numpy/python3-pil)
+# come from apt rather than pip: building numpy from source on a low-power armv6
+# Pi is slow and overflows trixie's small tmpfs /tmp. The venv is created with
+# --system-site-packages so it can see them (see install_project). The small
+# toolchain (build-essential + python3-dev) is only for inky's tiny C extensions
+# (spidev/RPi.GPIO etc.); the heavy packages are no longer compiled.
 APT_PACKAGES=(
   fonts-dejavu-core
   python3 python3-venv python3-dev
-  build-essential libjpeg-dev zlib1g-dev libfreetype-dev libffi-dev
+  python3-numpy python3-pil
+  build-essential
   git curl
 )
 
@@ -213,13 +216,21 @@ install_project() {
     "install it (e.g. 'sudo apt-get install python3.13 python3.13-venv') and re-run ./install.sh"
   info "  using $("$py" -V 2>&1) at ${py}"
 
-  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-    "$py" -m venv "$VENV_DIR" || die "could not create venv at ${VENV_DIR}" \
-      "ensure the venv module is present (sudo apt-get install python3-venv) and check disk space"
+  # --system-site-packages lets the venv see the apt numpy/Pillow so pip treats
+  # them as already satisfied (no source build). Recreate the venv if it is
+  # missing or was made without the flag (e.g. a venv from an earlier run).
+  if [[ ! -x "${VENV_DIR}/bin/python" ]] \
+     || ! grep -qi '^include-system-site-packages = true' \
+            "${VENV_DIR}/pyvenv.cfg" 2>/dev/null; then
+    rm -rf "$VENV_DIR"
+    "$py" -m venv --system-site-packages "$VENV_DIR" \
+      || die "could not create venv at ${VENV_DIR}" \
+        "ensure the venv module is present (sudo apt-get install python3-venv) and check disk space"
   fi
   "${VENV_DIR}/bin/python" -m pip install --quiet --upgrade pip
-  # The [pi] extra pulls in the hardware 'inky' package. Rendering is pure
-  # Pillow now, so there is no browser to install.
+  # The [pi] extra pulls in the hardware 'inky' package. numpy and Pillow come
+  # from apt (visible via --system-site-packages), so only inky and the
+  # pure-python deps install into the venv -- no browser, no heavy compile.
   "${VENV_DIR}/bin/pip" install --quiet -e "${INSTALL_DIR}[pi]" \
     || die "pip install failed" "re-run with '${VENV_DIR}/bin/pip install -e ${INSTALL_DIR}[pi]' to see details"
   ok "WeatherDisplay installed into ${VENV_DIR}"

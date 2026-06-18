@@ -61,12 +61,15 @@ cd ~/WeatherDisplay
 `install.sh` is **idempotent** — re-run it any time. It will:
 
 - enable the **SPI** bus (needed by the Inky) and the `spi0-0cs` overlay,
-- install **fonts**, the OS **Python 3.13+** (`python3` + `python3-venv`), and a
-  small build toolchain via apt,
-- ensure ~1 GB of **swap** (native pip builds can be memory-hungry on low-RAM
-  Pis like the 512 MB Zero 2 W),
-- create a **virtualenv** from the newest installed **Python ≥ 3.13** (no slow
-  source build) and install WeatherDisplay (with the `[pi]` hardware extra),
+- install **fonts**, the OS **Python 3.13+** (`python3` + `python3-venv`),
+  **numpy** and **Pillow** (`python3-numpy` + `python3-pil`), and a small build
+  toolchain via apt — the heavy binary deps come prebuilt so nothing slow is
+  compiled on the Pi,
+- ensure ~1 GB of **swap** (headroom for any native pip build on low-RAM Pis
+  like the 512 MB Zero 2 W),
+- create a **virtualenv** from the newest installed **Python ≥ 3.13**, with
+  `--system-site-packages` so it sees the apt numpy/Pillow, and install
+  WeatherDisplay (with the `[pi]` hardware extra),
 - create **`config.toml`** from the example,
 - check that **`pisugar-server`** is reachable, and
 - install + enable the **systemd service**.
