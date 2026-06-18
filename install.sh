@@ -20,16 +20,20 @@ STATE_DIR="/var/lib/weatherdisplay"
 SERVICE_NAME="weatherdisplay.service"
 SERVICE_TEMPLATE="${INSTALL_DIR}/systemd/${SERVICE_NAME}"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}"
-PYENV_ROOT="${PYENV_ROOT:-${HOME}/.pyenv}"
-MIN_SWAP_KB=900000  # ~900 MB; headroom for the Python build on low-RAM Pis
+MIN_PY_MINOR=13     # require Python 3.<this>+; a newer OS Python is used if found
+MIN_SWAP_KB=900000  # ~900 MB; headroom for native pip builds on low-RAM Pis
 
-# pyenv "suggested build environment" + our runtime needs (fonts-dejavu-core is
-# the error-banner fallback font).
+# Runtime + build needs. fonts-dejavu-core is the error-banner fallback font;
+# python3 (>= 3.13 on Debian 13 "trixie") plus python3-venv give us the
+# interpreter and the venv module; the small toolchain + headers let pip build
+# any sdist-only wheels (e.g. Pillow on architectures without prebuilt wheels).
+# We use the OS Python rather than compiling our own, so there are no CPython
+# build dependencies here.
 APT_PACKAGES=(
   fonts-dejavu-core
-  make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev
-  libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev
-  libffi-dev liblzma-dev libgdbm-dev libnss3-dev uuid-dev git curl
+  python3 python3-venv python3-dev
+  build-essential libjpeg-dev zlib1g-dev libfreetype-dev libffi-dev
+  git curl
 )
 
 # --------------------------------------------------------------------------- #
@@ -123,7 +127,7 @@ install_apt() {
 }
 
 # --------------------------------------------------------------------------- #
-# 3. Ensure enough swap for the Python build on low-RAM Pis (e.g. Zero 2 W)
+# 3. Ensure enough swap for native pip builds on low-RAM Pis (e.g. Zero 2 W)
 # --------------------------------------------------------------------------- #
 ensure_swap() {
   info "Checking swap space"
@@ -166,34 +170,36 @@ ensure_swap() {
 }
 
 # --------------------------------------------------------------------------- #
-# 4. Install pyenv and build the pinned Python
+# 4. Locate the newest suitable Python interpreter (>= 3.<MIN_PY_MINOR>)
 # --------------------------------------------------------------------------- #
-install_python() {
-  local version
-  version="$(cat "${INSTALL_DIR}/.python-version")"
-  info "Setting up Python ${version} via pyenv"
-
-  if [[ ! -d "$PYENV_ROOT" ]]; then
-    info "  installing pyenv into ${PYENV_ROOT}"
-    curl -fsSL https://pyenv.run | bash \
-      || die "pyenv installation failed" "see https://github.com/pyenv/pyenv#installation"
-  else
-    ok "pyenv already present"
+find_python() {
+  # Echo the path of the newest Python that meets the >= 3.MIN_PY_MINOR floor,
+  # or return non-zero if there is none.
+  #
+  # `python3.NN` names carry their minor version, so we pick the highest from
+  # the names alone (matching two digits only, since 3.9 and below can't clear a
+  # >= 3.10 floor). The unversioned `python3` hides its version, so it is the
+  # only one we run, and only as a fallback when no versioned binary qualifies.
+  local name minor best_minor=0 best_path=""
+  while read -r name; do
+    [[ "$name" =~ ^python3\.([0-9][0-9])$ ]] || continue
+    minor=$(( 10#${BASH_REMATCH[1]} ))  # 10# so e.g. 3.09 isn't read as octal
+    if (( minor >= MIN_PY_MINOR && minor > best_minor )); then
+      best_minor=$minor
+      best_path="$(command -v "$name")"
+    fi
+  done < <(compgen -c python3. 2>/dev/null | sort -u)
+  if [[ -n "$best_path" ]]; then
+    echo "$best_path"
+    return 0
   fi
 
-  export PYENV_ROOT
-  export PATH="${PYENV_ROOT}/bin:${PATH}"
-  eval "$(pyenv init - bash)"
-
-  if pyenv versions --bare | grep -qx "$version"; then
-    ok "Python ${version} already built"
-  else
-    info "  building Python ${version} (this can take 20+ min on a low-power Pi)"
-    pyenv install -s "$version" \
-      || die "Python ${version} build failed" \
-             "check the apt build deps installed above, then re-run ./install.sh"
-    ok "Python ${version} built"
-  fi
+  local path
+  path="$(command -v python3 2>/dev/null)" || return 1
+  minor="$("$path" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)" \
+    || return 1
+  [[ "$minor" =~ ^[0-9]+$ ]] && (( minor >= MIN_PY_MINOR )) || return 1
+  echo "$path"
 }
 
 # --------------------------------------------------------------------------- #
@@ -201,13 +207,15 @@ install_python() {
 # --------------------------------------------------------------------------- #
 install_project() {
   info "Creating virtualenv and installing WeatherDisplay"
-  local version py
-  version="$(cat "${INSTALL_DIR}/.python-version")"
-  py="${PYENV_ROOT}/versions/${version}/bin/python"
-  [[ -x "$py" ]] || die "expected Python at ${py} not found" "re-run ./install.sh to build it"
+  local py
+  py="$(find_python)" || die \
+    "no Python 3.${MIN_PY_MINOR}+ found on PATH" \
+    "install it (e.g. 'sudo apt-get install python3.13 python3.13-venv') and re-run ./install.sh"
+  info "  using $("$py" -V 2>&1) at ${py}"
 
   if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-    "$py" -m venv "$VENV_DIR" || die "could not create venv at ${VENV_DIR}" "check disk space and permissions"
+    "$py" -m venv "$VENV_DIR" || die "could not create venv at ${VENV_DIR}" \
+      "ensure the venv module is present (sudo apt-get install python3-venv) and check disk space"
   fi
   "${VENV_DIR}/bin/python" -m pip install --quiet --upgrade pip
   # The [pi] extra pulls in the hardware 'inky' package. Rendering is pure
@@ -283,7 +291,6 @@ main() {
   [[ "$IS_PI" -eq 1 ]] && enable_spi
   install_apt
   ensure_swap
-  install_python
   install_project
   setup_config
   if [[ "$IS_PI" -eq 1 ]]; then
