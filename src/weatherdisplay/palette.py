@@ -22,11 +22,11 @@ from PIL import ImageChops
 # The native panel resolution.
 EINK_SIZE = (800, 480)
 
-# Monochrome snapping (applied before dithering). Browser text and hairlines
-# are antialiased to grey, which Floyd-Steinberg then turns into a black/white
-# stipple. Pixels whose channel spread (max-min) is within this bound are
-# treated as grey and snapped to solid black/white, so text stays crisp while
-# genuinely coloured pixels are left to dither faithfully.
+# Monochrome snapping (applied before dithering). Antialiased text (e.g. the
+# error banner) renders as grey, which Floyd-Steinberg then turns into a
+# black/white stipple. Pixels whose channel spread (max-min) is within this
+# bound are treated as grey and snapped to solid black/white, so text stays
+# crisp while genuinely coloured pixels are left to dither faithfully.
 _MONO_CHROMA_MAX = 32
 _MONO_LUMA_SPLIT = 128  # grey pixels darker than this snap to black, else white
 

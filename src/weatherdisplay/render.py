@@ -263,7 +263,6 @@ def _draw_chart(
                     fill=_WHITE,
                     anchor="ms",
                 )
-        # Hour label below the axis.
         draw.text(
             (x, _HOUR_LABEL_Y),
             bar.hour_label,
@@ -302,9 +301,7 @@ def _draw_sun_events(
     box_w, box_h = 26, _SUN_ICON + 4
     for event in events:
         x = round(left + (event.pos + 0.5) * col)
-        # Notch straddling the axis.
         draw.line((x, _AXIS_Y - 4, x, _AXIS_Y + 3), fill=_BLACK, width=2)
-        # Boxed icon below the axis (the white fill occludes the hour label).
         top = _AXIS_Y + 3
         draw.rectangle(
             (x - box_w // 2, top, x + box_w // 2, top + box_h),
@@ -313,7 +310,6 @@ def _draw_sun_events(
         )
         glyph = icons.render(event.icon, _SUN_ICON)
         image.paste(glyph, (x - _SUN_ICON // 2, top + 2), glyph)
-        # Time just below the box.
         draw.text(
             (x, top + box_h + 2),
             event.label,
