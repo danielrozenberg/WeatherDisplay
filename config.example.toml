@@ -33,6 +33,11 @@ day_chips = 9
 # How often the device wakes, updates, and shuts down again (hours).
 wake_interval_hours = 4
 
+# Retries after the first failed forecast fetch, with exponential backoff
+# (2, 4, 8, 16 s ... ~30s total at the default) before showing the error banner.
+# Helps ride out WiFi/DNS not being ready yet just after a wake. 0 disables.
+fetch_retries = 4
+
 # When true, the `update` job powers the Pi off after refreshing the screen
 # (the PiSugar RTC then wakes it again after wake_interval_hours).
 # Set to false (or `touch /boot/weatherdisplay-stayawake`) to keep the Pi on

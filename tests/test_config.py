@@ -79,3 +79,14 @@ def test_saturation_bounds(tmp_path: pathlib.Path) -> None:
     text = _VALID.replace("saturation = 0.4", "saturation = 1.7")
     with pytest.raises(errors.ConfigError, match="saturation"):
         config_lib.load_config(_write(tmp_path, text))
+
+
+def test_fetch_retries_default(tmp_path: pathlib.Path) -> None:
+    cfg = config_lib.load_config(_write(tmp_path, _VALID))
+    assert cfg.fetch_retries == 4
+
+
+def test_fetch_retries_out_of_range(tmp_path: pathlib.Path) -> None:
+    text = _VALID + "fetch_retries = 11\n"
+    with pytest.raises(errors.ConfigError, match="fetch_retries"):
+        config_lib.load_config(_write(tmp_path, text))

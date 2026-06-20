@@ -13,6 +13,7 @@ import logging
 import os
 import pathlib
 import subprocess
+import time
 
 from . import config as config_lib
 from . import dev_server
@@ -29,6 +30,12 @@ _STAY_AWAKE_SENTINELS = (
     pathlib.Path("/boot/firmware/weatherdisplay-stayawake"),
     pathlib.Path("/boot/weatherdisplay-stayawake"),
 )
+
+# Exponential backoff between forecast-fetch retries (see _fetch_with_retries).
+# The default cfg.fetch_retries=4 gives 2+4+8+16 = ~30s before giving up, enough
+# to ride out WiFi/DNS not being ready yet right after a wake.
+_RETRY_BASE_DELAY = 2.0
+_RETRY_MAX_DELAY = 30.0
 
 
 def default_state_dir() -> pathlib.Path:
@@ -52,7 +59,7 @@ def update(cfg: config_lib.Config) -> None:
     try:
         battery = _read_battery(sugar, log)
         log.info("fetching weather for %.3f, %.3f", cfg.latitude, cfg.longitude)
-        report = weather.fetch(cfg)
+        report = _fetch_with_retries(cfg, log)
         png = render.render_png(report, battery, cfg)
         display.show(png, cfg.saturation, last_image_path=last_image)
         log.info("display updated")
@@ -62,6 +69,41 @@ def update(cfg: config_lib.Config) -> None:
     finally:
         _schedule_next_wake(cfg, sugar, log)
         _maybe_shutdown(cfg, log)
+
+
+def _fetch_with_retries(
+    cfg: config_lib.Config, log: logging.Logger
+) -> weather.WeatherReport:
+    """Fetches the forecast, retrying network failures with exponential backoff.
+
+    Rides out a network that is not ready yet (e.g. WiFi/DNS just after a wake):
+    retries up to ``cfg.fetch_retries`` times before re-raising. Only
+    ``NetworkError`` is retried — an ``ApiError`` (bad request, or a 5xx that
+    already exhausted the HTTP-layer retries) will not fix itself.
+
+    Raises:
+      NetworkError: If every attempt failed to reach Open-Meteo.
+      ApiError: If the response was an error status or unparseable.
+    """
+    attempts = cfg.fetch_retries + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return weather.fetch(cfg)
+        except errors.NetworkError as exc:
+            if attempt >= attempts:
+                raise
+            delay = min(
+                _RETRY_MAX_DELAY, _RETRY_BASE_DELAY * 2 ** (attempt - 1)
+            )
+            log.warning(
+                "fetch attempt %d/%d failed: %s; retrying in %.0fs",
+                attempt,
+                attempts,
+                exc.user_message,
+                delay,
+            )
+            time.sleep(delay)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def dev(cfg: config_lib.Config) -> None:

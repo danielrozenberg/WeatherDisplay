@@ -40,6 +40,7 @@ class Config:
     chart_hours: int = 16
     day_chips: int = 10
     wake_interval_hours: int = 4
+    fetch_retries: int = 4
     auto_shutdown: bool = True
     pisugar_host: str = "127.0.0.1"
     pisugar_port: int = 8423
@@ -150,6 +151,12 @@ def _build(values: dict[str, object], path: pathlib.Path) -> Config:
             f"wake_interval_hours must be between 1 and 24 (got {wake_hours})"
         )
 
+    fetch_retries = _as_int(values["fetch_retries"], "fetch_retries", path)
+    if not 0 <= fetch_retries <= 10:
+        raise errors.ConfigError(
+            f"fetch_retries must be between 0 and 10 (got {fetch_retries})"
+        )
+
     pisugar_port = _as_int(values["pisugar_port"], "pisugar_port", path)
     dev_port = _as_int(values["dev_port"], "dev_port", path)
     for name, port in (("pisugar_port", pisugar_port), ("dev_port", dev_port)):
@@ -167,6 +174,7 @@ def _build(values: dict[str, object], path: pathlib.Path) -> Config:
         chart_hours=chart_hours,
         day_chips=day_chips,
         wake_interval_hours=wake_hours,
+        fetch_retries=fetch_retries,
         auto_shutdown=_as_bool(values["auto_shutdown"], "auto_shutdown", path),
         pisugar_host=_as_str(values["pisugar_host"], "pisugar_host", path),
         pisugar_port=pisugar_port,
