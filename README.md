@@ -100,9 +100,7 @@ on code and asset changes.
 ## Development
 
 ```bash
-ruff check . && ruff format --check .   # lint + format
-pyrefly check                           # type-check
-pytest                                  # tests
+./tools/ci.sh   # format check, lint, type-check, tests
 ```
 
 The hardware-only `inky` dependency lives in the `[pi]` extra, so everything
