@@ -14,19 +14,26 @@ authors = [{ name = "Daniel Rozenberg" }]
 dependencies = [
     # Open-Meteo is queried via its documented JSON API using a cached,
     # auto-retrying requests session (no heavyweight flatbuffers/numpy client).
-    "requests>=2.32",
-    "requests-cache>=1.2",
-    "retry-requests>=2.0",
-    "pillow>=11.1",
-    "flask>=3.1",
+    "requests==2.34.2",
+    "requests-cache==1.3.3",
+    "retry-requests==2.0.0",
+    "pillow==12.3.0",
+    "flask==3.1.3",
 ]
 
 [project.optional-dependencies]
 # Hardware-only deps. Installed on the Raspberry Pi (`pip install .[pi]`); not
 # needed on a dev machine, which has no SPI/GPIO.
-pi = ["inky==2.4.0"]  # 2.4.0 adds the AC-waveform Spectra 6 (E673) support
+pi = [
+    "inky==2.4.0",
+]  # 2.4.0 adds the AC-waveform Spectra 6 (E673) support
 # Linting, type-checking and tests.
-dev = ["ruff>=0.9", "pyrefly>=1.0", "pytest>=8.0", "types-requests>=2.32"]
+dev = [
+    "ruff==0.15.20",
+    "pyrefly==1.1.1",
+    "pytest==9.1.1",
+    "types-requests==2.33.0.20260518",
+]
 
 [project.scripts]
 weatherdisplay = "weatherdisplay.__main__:main"
