@@ -19,8 +19,9 @@ User=root
 WorkingDirectory=@INSTALL_DIR@
 Environment=WEATHERDISPLAY_STATE=@STATE_DIR@
 ExecStart=@VENV@/bin/weatherdisplay --config @CONFIG@ update
-# Generous timeout for the fetch + Pillow render on a slow Pi.
-TimeoutStartSec=120
+# Covers the worst-case error path: with fetch_retries=4, a timing-out network
+# takes up to ~475s of fetch attempts and backoff before the error banner.
+TimeoutStartSec=600
 StandardOutput=journal
 StandardError=journal
 

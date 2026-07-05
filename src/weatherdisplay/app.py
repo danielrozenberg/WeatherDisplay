@@ -1,9 +1,9 @@
 """Orchestration for the two commands: ``update`` and ``dev``.
 
-``update`` is the periodic job run on the Pi: read battery, fetch weather,
-render, show, then schedule the next PiSugar wake-up and power off. Any expected
-failure leaves the previous screen up with an error banner. ``dev`` just starts
-the local preview server.
+``update`` is the periodic job run on the Pi: schedule the next PiSugar
+wake-up, read battery, fetch weather, render, show, then power off. Any
+expected failure leaves the previous screen up with an error banner. ``dev``
+just starts the local preview server.
 """
 
 from __future__ import annotations
@@ -46,8 +46,9 @@ def default_state_dir() -> pathlib.Path:
 def update(cfg: config_lib.Config) -> None:
     """Runs one update cycle: fetch, render, show, then sleep.
 
-    Always schedules the next wake-up and (if enabled) powers off, even when the
-    update itself fails — so the device keeps its cadence no matter what.
+    Arms the next wake-up before touching the network or the panel, so the
+    cadence survives the process dying mid-cycle; the ``finally`` re-arm covers
+    pisugar-server not accepting connections yet right after boot.
 
     Args:
       cfg: The loaded configuration.
@@ -56,6 +57,7 @@ def update(cfg: config_lib.Config) -> None:
     sugar = pisugar.from_config(cfg)
     last_image = default_state_dir() / "last_image.png"
 
+    _schedule_next_wake(cfg, sugar, log)
     try:
         battery = _read_battery(sugar, log)
         log.info("fetching weather for %.3f, %.3f", cfg.latitude, cfg.longitude)

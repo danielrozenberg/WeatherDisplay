@@ -1,16 +1,20 @@
-"""Tests for app orchestration: the forecast-fetch retry loop (no network)."""
+"""Tests for app orchestration: retries and wake scheduling (no network)."""
 
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import logging
 
 import pytest
 
 from weatherdisplay import app
 from weatherdisplay import config as config_lib
+from weatherdisplay import display
 from weatherdisplay import errors
+from weatherdisplay import pisugar
 from weatherdisplay import presets
+from weatherdisplay import render
 from weatherdisplay import weather
 
 
@@ -74,3 +78,71 @@ def test_fetch_does_not_retry_api_error(
         app._fetch_with_retries(cfg, logging.getLogger("test"))
     assert calls["n"] == 1  # ApiError is not retried
     assert delays == []
+
+
+class _FakeSugar:
+    """A PiSugar stand-in that records schedule_wake calls in a shared log."""
+
+    def __init__(self, events: list[str]) -> None:
+        self._events = events
+        self.wakes: list[datetime.datetime] = []
+
+    def read_battery(self) -> pisugar.BatteryStatus:
+        raise errors.PiSugarError("no server in tests")
+
+    def schedule_wake(self, at: datetime.datetime) -> None:
+        self._events.append("schedule_wake")
+        self.wakes.append(at)
+
+
+def test_update_arms_wake_before_fetching(
+    cfg: config_lib.Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The wake-up must be armed before the network is touched, so the cadence
+    # survives the process being killed mid-cycle (e.g. systemd start timeout).
+    _no_sleep(monkeypatch)
+    cfg = dataclasses.replace(cfg, auto_shutdown=False)
+    events: list[str] = []
+    sugar = _FakeSugar(events)
+    monkeypatch.setattr(pisugar, "from_config", lambda _cfg: sugar)
+
+    def failing_fetch(_cfg: config_lib.Config) -> weather.WeatherReport:
+        events.append("fetch")
+        raise errors.NetworkError("down")
+
+    monkeypatch.setattr(weather, "fetch", failing_fetch)
+    shown: list[str] = []
+    monkeypatch.setattr(
+        display,
+        "show_error",
+        lambda message, *args, **kwargs: shown.append(message),
+    )
+
+    app.update(cfg)
+
+    assert events[0] == "schedule_wake"
+    assert "fetch" in events
+    assert events[-1] == "schedule_wake"  # backup re-arm in finally
+    assert all(wake.tzinfo is not None for wake in sugar.wakes)
+    assert shown and shown[0].startswith("Network error")
+
+
+def test_update_schedules_wake_on_success(
+    cfg: config_lib.Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = dataclasses.replace(cfg, auto_shutdown=False)
+    events: list[str] = []
+    sugar = _FakeSugar(events)
+    monkeypatch.setattr(pisugar, "from_config", lambda _cfg: sugar)
+    report = presets.build("clear-day", cfg)
+    monkeypatch.setattr(weather, "fetch", lambda _cfg: report)
+    monkeypatch.setattr(render, "render_png", lambda *args, **kwargs: b"png")
+    pushed: list[bytes] = []
+    monkeypatch.setattr(
+        display, "show", lambda png, *args, **kwargs: pushed.append(png)
+    )
+
+    app.update(cfg)
+
+    assert pushed == [b"png"]
+    assert events == ["schedule_wake", "schedule_wake"]
