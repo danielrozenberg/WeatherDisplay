@@ -16,7 +16,7 @@ update fails, the last good screen is kept under an error banner.
 
 ## Hardware
 
-Tested on a **Raspberry Pi 1 Model B+** with a **PiSugar 3 Plus**, but any
+Tested on a **Raspberry Pi 4 Model B** with a **PiSugar 3 Plus**, but any
 Raspberry Pi + PiSugar combination should work. The e-ink panel is the one fixed
 part.
 

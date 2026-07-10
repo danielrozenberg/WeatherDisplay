@@ -21,20 +21,14 @@ SERVICE_NAME="weatherdisplay.service"
 SERVICE_TEMPLATE="${INSTALL_DIR}/systemd/${SERVICE_NAME}"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}"
 MIN_PY_MINOR=13     # require Python 3.<this>+; a newer OS Python is used if found
-MIN_SWAP_KB=900000  # ~900 MB; headroom for native pip builds on low-RAM Pis
 
 # Runtime + build needs. fonts-dejavu-core is the error-banner fallback font;
 # python3 (>= 3.13 on Debian 13 "trixie") plus python3-venv give us the
-# interpreter and the venv module. numpy and Pillow (python3-numpy/python3-pil)
-# come from apt rather than pip: building numpy from source on a low-power armv6
-# Pi is slow and overflows trixie's small tmpfs /tmp. The venv is created with
-# --system-site-packages so it can see them (see install_project). The small
-# toolchain (build-essential + python3-dev) is only for inky's tiny C extensions
-# (spidev/RPi.GPIO etc.); the heavy packages are no longer compiled.
+# interpreter and the venv module. The toolchain (build-essential + python3-dev)
+# is for Inky's C extensions (spidev/RPi.GPIO etc.)
 APT_PACKAGES=(
   fonts-dejavu-core
   python3 python3-venv python3-dev
-  python3-numpy python3-pil
   build-essential
   git curl
 )
@@ -130,50 +124,7 @@ install_apt() {
 }
 
 # --------------------------------------------------------------------------- #
-# 3. Ensure enough swap for native pip builds on low-RAM Pis (e.g. Zero 2 W)
-# --------------------------------------------------------------------------- #
-ensure_swap() {
-  info "Checking swap space"
-  local swap_kb
-  swap_kb="$(awk '/SwapTotal/ {print $2}' /proc/meminfo)"
-  if [[ "${swap_kb:-0}" -ge "$MIN_SWAP_KB" ]]; then
-    ok "swap is $((swap_kb / 1024)) MB (>= $((MIN_SWAP_KB / 1024)) MB)"
-    return
-  fi
-  if [[ -f /etc/dphys-swapfile ]]; then
-    info "  raising dphys-swapfile to 1024 MB"
-    sudo sed -i 's/^#\?CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile \
-      || die "could not edit /etc/dphys-swapfile" "set CONF_SWAPSIZE=1024 manually and run 'sudo dphys-swapfile setup'"
-    sudo dphys-swapfile setup && sudo dphys-swapfile swapon \
-      || die "could not enable swap" "run 'sudo dphys-swapfile setup && sudo dphys-swapfile swapon'"
-    ok "swap raised to 1024 MB"
-  else
-    # Newer Pi OS images ship zram-only swap and no dphys-swapfile. Fall back
-    # to a plain 1 GB /swapfile. Idempotent: reuse one that already exists and
-    # only append the fstab entry once.
-    local swapfile=/swapfile
-    info "  no dphys-swapfile; ensuring a 1 GB ${swapfile}"
-    if ! swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$swapfile"; then
-      if [[ ! -e "$swapfile" ]]; then
-        sudo fallocate -l 1G "$swapfile" \
-          || sudo dd if=/dev/zero of="$swapfile" bs=1M count=1024 status=none \
-          || die "could not allocate ${swapfile}" "free up ~1 GB of disk and re-run ./install.sh"
-        sudo chmod 600 "$swapfile"
-        sudo mkswap "$swapfile" >/dev/null \
-          || die "mkswap failed on ${swapfile}" "run 'sudo rm ${swapfile}' and re-run ./install.sh"
-      fi
-      sudo swapon "$swapfile" \
-        || die "could not enable ${swapfile}" "run 'sudo swapon ${swapfile}'"
-    fi
-    if ! grep -qE "^[[:space:]]*${swapfile}[[:space:]]" /etc/fstab 2>/dev/null; then
-      echo "${swapfile} none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
-    fi
-    ok "swap file active at ${swapfile} (1024 MB)"
-  fi
-}
-
-# --------------------------------------------------------------------------- #
-# 4. Locate the newest suitable Python interpreter (>= 3.<MIN_PY_MINOR>)
+# 3. Locate the newest suitable Python interpreter (>= 3.<MIN_PY_MINOR>)
 # --------------------------------------------------------------------------- #
 find_python() {
   # Echo the path of the newest Python that meets the >= 3.MIN_PY_MINOR floor,
@@ -206,7 +157,7 @@ find_python() {
 }
 
 # --------------------------------------------------------------------------- #
-# 5. Create the virtualenv and install the project
+# 4. Create the virtualenv and install the project
 # --------------------------------------------------------------------------- #
 install_project() {
   info "Creating virtualenv and installing WeatherDisplay"
@@ -216,28 +167,20 @@ install_project() {
     "install it (e.g. 'sudo apt-get install python3.13 python3.13-venv') and re-run ./install.sh"
   info "  using $("$py" -V 2>&1) at ${py}"
 
-  # --system-site-packages lets the venv see the apt numpy/Pillow so pip treats
-  # them as already satisfied (no source build). Recreate the venv if it is
-  # missing or was made without the flag (e.g. a venv from an earlier run).
-  if [[ ! -x "${VENV_DIR}/bin/python" ]] \
-     || ! grep -qi '^include-system-site-packages = true' \
-            "${VENV_DIR}/pyvenv.cfg" 2>/dev/null; then
-    rm -rf "$VENV_DIR"
-    "$py" -m venv --system-site-packages "$VENV_DIR" \
+  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+    "$py" -m venv "$VENV_DIR" \
       || die "could not create venv at ${VENV_DIR}" \
         "ensure the venv module is present (sudo apt-get install python3-venv) and check disk space"
   fi
   "${VENV_DIR}/bin/python" -m pip install --quiet --upgrade pip
-  # The [pi] extra pulls in the hardware 'inky' package. numpy and Pillow come
-  # from apt (visible via --system-site-packages), so only inky and the
-  # pure-python deps install into the venv -- no browser, no heavy compile.
+  # The [pi] extra pulls in the hardware 'inky' package that drives the panel.
   "${VENV_DIR}/bin/pip" install --quiet -e "${INSTALL_DIR}[pi]" \
     || die "pip install failed" "re-run with '${VENV_DIR}/bin/pip install -e ${INSTALL_DIR}[pi]' to see details"
   ok "WeatherDisplay installed into ${VENV_DIR}"
 }
 
 # --------------------------------------------------------------------------- #
-# 6. Create the config file from the example
+# 5. Create the config file from the example
 # --------------------------------------------------------------------------- #
 setup_config() {
   info "Setting up configuration"
@@ -251,7 +194,7 @@ setup_config() {
 }
 
 # --------------------------------------------------------------------------- #
-# 7. Check the PiSugar power-manager server is reachable
+# 6. Check the PiSugar power-manager server is reachable
 # --------------------------------------------------------------------------- #
 check_pisugar() {
   info "Checking PiSugar power-manager server"
@@ -265,7 +208,7 @@ check_pisugar() {
 }
 
 # --------------------------------------------------------------------------- #
-# 8. Install and enable the systemd service
+# 7. Install and enable the systemd service
 # --------------------------------------------------------------------------- #
 install_service() {
   info "Installing systemd service"
@@ -301,7 +244,6 @@ main() {
   echo
   [[ "$IS_PI" -eq 1 ]] && enable_spi
   install_apt
-  ensure_swap
   install_project
   setup_config
   if [[ "$IS_PI" -eq 1 ]]; then
