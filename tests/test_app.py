@@ -127,6 +127,36 @@ def test_update_arms_wake_before_fetching(
     assert shown and shown[0].startswith("Network error")
 
 
+def test_maybe_shutdown_waits_for_panel_before_poweroff(
+    cfg: config_lib.Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The panel must have time to finish its refresh before power is cut,
+    # otherwise the screen is left stuck half-drawn.
+    delays = _no_sleep(monkeypatch)
+    monkeypatch.setattr(app, "_active_sentinel", lambda: None)
+    powered_off: list[bool] = []
+    monkeypatch.setattr(app, "_poweroff", lambda _log: powered_off.append(True))
+
+    app._maybe_shutdown(cfg, logging.getLogger("test"))
+
+    assert delays == [30.0]
+    assert powered_off == [True]
+
+
+def test_maybe_shutdown_disabled_skips_delay_and_poweroff(
+    cfg: config_lib.Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    delays = _no_sleep(monkeypatch)
+    cfg = dataclasses.replace(cfg, auto_shutdown=False)
+    monkeypatch.setattr(
+        app, "_poweroff", lambda _log: pytest.fail("must not power off")
+    )
+
+    app._maybe_shutdown(cfg, logging.getLogger("test"))
+
+    assert delays == []
+
+
 def test_update_schedules_wake_on_success(
     cfg: config_lib.Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:

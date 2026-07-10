@@ -37,6 +37,10 @@ _STAY_AWAKE_SENTINELS = (
 _RETRY_BASE_DELAY = 2.0
 _RETRY_MAX_DELAY = 30.0
 
+# Grace period before power-off so the Inky panel finishes its refresh cycle;
+# cutting power mid-update leaves the screen stuck half-drawn.
+_SHUTDOWN_DELAY_SECONDS = 30.0
+
 
 def default_state_dir() -> pathlib.Path:
     """Returns the directory for persistent state (the last-good image)."""
@@ -172,7 +176,11 @@ def _maybe_shutdown(cfg: config_lib.Config, log: logging.Logger) -> None:
     if sentinel is not None:
         log.info("stay-awake sentinel %s present; staying awake", sentinel)
         return
-    log.info("powering off")
+    log.info(
+        "waiting %.0fs for the panel to settle, then powering off",
+        _SHUTDOWN_DELAY_SECONDS,
+    )
+    time.sleep(_SHUTDOWN_DELAY_SECONDS)
     _poweroff(log)
 
 
