@@ -156,6 +156,7 @@ def _push(image: Image.Image, saturation: float) -> None:
 
     try:
         device = inky.auto()
+        _patch_busy_wait(device)
         # Snap antialiased greys to solid ink so the driver's dithering leaves
         # text crisp (mirrors the dev preview's simulate_eink preprocessing).
         prepared = palette.snap_grays_to_mono(image)
@@ -166,6 +167,34 @@ def _push(image: Image.Image, saturation: float) -> None:
     # The image is on its way to the panel at this point, so a wait failure is
     # only logged — it must not trigger the error-screen path.
     _wait_until_idle(device)
+
+
+def _patch_busy_wait(device: object) -> None:
+    """Gives the driver's refresh busy-wait a realistic ceiling.
+
+    The E673 driver's ``_update`` waits only 32s for the refresh before
+    sending the panel power-off command (POF); an AC-waveform Spectra-6
+    refresh regularly takes longer (~35-45s, more when cold), so the POF
+    lands mid-refresh and truncates the late colour passes (blue/green).
+    Rebinding the instance's ``_busy_wait`` so that refresh-length waits get
+    ``_BUSY_TIMEOUT_SECONDS`` keeps POF strictly after the refresh. The wait
+    still returns the moment the BUSY line clears, so fast refreshes lose
+    nothing; the short housekeeping waits (0.3s) are left untouched.
+
+    TODO: remove once pimoroni/inky ships a realistic refresh timeout in
+    inky_e673.py (upstream master still calls ``_busy_wait(32.0)``).
+    """
+    original = getattr(device, "_busy_wait", None)
+    if original is None:
+        _log.warning("driver has no _busy_wait; skipping refresh-wait patch")
+        return
+
+    def generous(timeout: float = 40.0) -> None:
+        if timeout >= 30.0:
+            timeout = max(timeout, _BUSY_TIMEOUT_SECONDS)
+        original(timeout)
+
+    setattr(device, "_busy_wait", generous)  # noqa: B010  # object-typed device
 
 
 def _wait_until_idle(device: object) -> None:
