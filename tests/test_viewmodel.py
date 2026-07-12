@@ -66,8 +66,8 @@ def test_header_imperial(cfg: config_lib.Config) -> None:
 
 def test_first_chip_is_today(cfg: config_lib.Config) -> None:
     view = viewmodel.build_view(_report(cfg), None, cfg)
-    assert view.chips[0].label == "Today"
-    assert view.chips[1].label != "Today"
+    assert view.chips[0].label == "Today, Jun 6"
+    assert view.chips[1].label == "Sun, Jun 7"
 
 
 def test_battery_none_is_low(cfg: config_lib.Config) -> None:

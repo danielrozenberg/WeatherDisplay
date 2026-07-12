@@ -47,7 +47,7 @@ class ChartView:
 class ChipView:
     """One day chip."""
 
-    label: str  # "Today", "Mon", ...
+    label: str  # "Today, Jul 12", "Mon, Jul 13", ...
     icon: str  # icon slug
     high: str  # primary-unit max, e.g. "21°"
     low: str  # primary-unit min, e.g. "12°"
@@ -248,10 +248,9 @@ def _updated_label(when: datetime.datetime) -> str:
 
 
 def _weekday_label(day: datetime.date, today: datetime.date) -> str:
-    """Returns 'Today' when ``day`` is ``today``, else a short weekday."""
-    if day == today:
-        return "Today"
-    return day.strftime("%a")
+    """Returns e.g. 'Mon, Jul 13', using 'Today' as ``today``'s weekday."""
+    weekday = "Today" if day == today else day.strftime("%a")
+    return f"{weekday}, {day:%b} {day.day}"
 
 
 def _format_uv(uv: float) -> str:
