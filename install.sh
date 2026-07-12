@@ -20,17 +20,22 @@ STATE_DIR="/var/lib/weatherdisplay"
 SERVICE_NAME="weatherdisplay.service"
 SERVICE_TEMPLATE="${INSTALL_DIR}/systemd/${SERVICE_NAME}"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}"
+BUTTON_SCRIPT="${INSTALL_DIR}/tools/pisugar-button.sh"
+PISUGAR_HOST="127.0.0.1"
+PISUGAR_PORT=8423
 MIN_PY_MINOR=13     # require Python 3.<this>+; a newer OS Python is used if found
 
 # Runtime + build needs. fonts-dejavu-core is the error-banner fallback font;
 # python3 (>= 3.13 on Debian 13 "trixie") plus python3-venv give us the
 # interpreter and the venv module. The toolchain (build-essential + python3-dev)
-# is for Inky's C extensions (spidev/RPi.GPIO etc.)
+# is for Inky's C extensions (spidev/RPi.GPIO etc.). i2c-tools provides
+# i2cget/i2cset for the button handler's LED-blink feedback.
 APT_PACKAGES=(
   fonts-dejavu-core
   python3 python3-venv python3-dev
   build-essential
   git curl
+  i2c-tools
 )
 
 # --------------------------------------------------------------------------- #
@@ -196,19 +201,64 @@ setup_config() {
 # --------------------------------------------------------------------------- #
 # 6. Check the PiSugar power-manager server is reachable
 # --------------------------------------------------------------------------- #
+PISUGAR_REACHABLE=0
+
 check_pisugar() {
   info "Checking PiSugar power-manager server"
-  if timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8423' 2>/dev/null; then
-    ok "pisugar-server is reachable on 127.0.0.1:8423"
+  if timeout 3 bash -c "exec 3<>/dev/tcp/${PISUGAR_HOST}/${PISUGAR_PORT}" 2>/dev/null; then
+    PISUGAR_REACHABLE=1
+    ok "pisugar-server is reachable on ${PISUGAR_HOST}:${PISUGAR_PORT}"
   else
-    warn "pisugar-server not reachable on :8423 (scheduled wake-up needs it)"
+    warn "pisugar-server not reachable on :${PISUGAR_PORT} (scheduled wake-up needs it)"
     echo "       install it with:"
     echo "         curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash"
   fi
 }
 
 # --------------------------------------------------------------------------- #
-# 7. Install and enable the systemd service
+# 7. Register the PiSugar custom-button actions
+# --------------------------------------------------------------------------- #
+# Sends one command to pisugar-server and echoes its reply line.
+pisugar_command() {
+  local reply
+  exec 3<>"/dev/tcp/${PISUGAR_HOST}/${PISUGAR_PORT}" || return 1
+  printf '%s\n' "$1" >&3
+  IFS= read -r -t 3 reply <&3 || reply=""
+  exec 3<&- 3>&-
+  echo "$reply"
+}
+
+setup_pisugar_button() {
+  info "Configuring the PiSugar custom button"
+  if [[ "$PISUGAR_REACHABLE" -ne 1 ]]; then
+    warn "pisugar-server unreachable; skipping button setup (re-run install.sh once it is up)"
+    return
+  fi
+  chmod +x "$BUTTON_SCRIPT"
+
+  # set_button_* commands persist into pisugar-server's config, so this
+  # survives reboots; re-applying the same values is a no-op. Single tap is
+  # explicitly disabled so it does nothing.
+  local cmd reply failed=0
+  for cmd in \
+    "set_button_enable single 0" \
+    "set_button_shell double ${BUTTON_SCRIPT} double" \
+    "set_button_enable double 1" \
+    "set_button_shell long ${BUTTON_SCRIPT} long" \
+    "set_button_enable long 1"; do
+    reply="$(pisugar_command "$cmd" 2>/dev/null)" || reply=""
+    if [[ "$reply" != *done* ]]; then
+      warn "pisugar-server rejected '${cmd}' (reply: '${reply}')"
+      failed=1
+    fi
+  done
+  if [[ "$failed" -eq 0 ]]; then
+    ok "custom button set: double tap keeps the Pi awake, long tap resumes auto-shutdown"
+  fi
+}
+
+# --------------------------------------------------------------------------- #
+# 8. Install and enable the systemd service
 # --------------------------------------------------------------------------- #
 install_service() {
   info "Installing systemd service"
@@ -248,6 +298,7 @@ main() {
   setup_config
   if [[ "$IS_PI" -eq 1 ]]; then
     check_pisugar
+    setup_pisugar_button
     install_service
   fi
   echo
@@ -262,7 +313,9 @@ main() {
     echo "  4. Re-enable shutdown in config when you are happy."
     echo
     echo "Maintenance: 'sudo touch /boot/firmware/weatherdisplay-stayawake' keeps"
-    echo "the Pi awake after an update so you can SSH in."
+    echo "the Pi awake after an update so you can SSH in. The PiSugar custom"
+    echo "button does the same: double tap creates the sentinel (LEDs blink 3x),"
+    echo "long tap removes it (LEDs blink 5x)."
   fi
 }
 

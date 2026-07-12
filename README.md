@@ -81,6 +81,16 @@ sudo touch /boot/firmware/weatherdisplay-stayawake   # skip auto-shutdown
 sudo rm    /boot/firmware/weatherdisplay-stayawake   # resume normal operation
 ```
 
+The PiSugar's custom button (the smaller one next to the power switch) manages
+the sentinel without a keyboard — the installer registers
+[`tools/pisugar-button.sh`](tools/pisugar-button.sh) with pisugar-server:
+
+- **Double tap** creates the sentinel; the battery LEDs blink 3 times.
+- **Long tap** removes it; the LEDs blink 5 times.
+
+The LED blink is best-effort confirmation (it needs a PiSugar 3 firmware that
+exposes the LED register); the sentinel actions work regardless.
+
 ## Dev mode (design without a Raspberry Pi)
 
 On any machine with Python 3.13+:
