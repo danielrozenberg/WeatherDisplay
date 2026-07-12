@@ -81,15 +81,19 @@ sudo touch /boot/firmware/weatherdisplay-stayawake   # skip auto-shutdown
 sudo rm    /boot/firmware/weatherdisplay-stayawake   # resume normal operation
 ```
 
-The PiSugar's custom button (the smaller one next to the power switch) manages
-the sentinel without a keyboard — the installer registers
+The PiSugar's custom button (the smaller one next to the power switch) covers
+maintenance without a keyboard — the installer registers
 [`tools/pisugar-button.sh`](tools/pisugar-button.sh) with pisugar-server:
 
-- **Double tap** creates the sentinel; the battery LEDs blink 3 times.
-- **Long tap** removes it; the LEDs blink 5 times.
+- **Single tap** starts an update (a no-op if one is already running); the
+  battery LEDs blink once.
+- **Double tap** toggles the stay-awake sentinel; the LEDs blink twice when it
+  is created, three times when it is removed.
+- **Long press** runs `git pull` and then starts an update; the LEDs blink
+  4 times up front, then once more when the pull is done and the update starts.
 
 The LED blink is best-effort confirmation (it needs a PiSugar 3 firmware that
-exposes the LED register); the sentinel actions work regardless.
+exposes the LED register); the actions work regardless.
 
 ## Dev mode (design without a Raspberry Pi)
 

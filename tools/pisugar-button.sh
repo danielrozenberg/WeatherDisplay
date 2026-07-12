@@ -4,13 +4,20 @@
 # the configured button shell via /bin/sh). Registered by install.sh through
 # the server's set_button_shell command.
 #
-#   pisugar-button.sh double   create the stay-awake sentinel, blink LEDs 3x
-#   pisugar-button.sh long     remove the sentinel, blink LEDs 5x
+#   pisugar-button.sh single   start an update (no-op if one is running);
+#                              blink LEDs 1x
+#   pisugar-button.sh double   toggle the stay-awake sentinel; blink LEDs 2x
+#                              when created, 3x when removed
+#   pisugar-button.sh long     git pull, then start an update; blink LEDs 4x
+#                              up front and 1x more when the update starts
 #
 # The LED blink is visual confirmation only and is best-effort: it drives the
 # four battery LEDs directly over I2C (PiSugar 3 register 0xE0), which needs
 # i2c-tools and a firmware that exposes that register. Failures are ignored.
 set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVICE=weatherdisplay.service
 
 I2C_BUS=1
 I2C_ADDR=0x57
@@ -19,6 +26,7 @@ REG_LED=0xe0          # bits 0-3 drive the four battery LEDs
 LED_ALL_ON=0x0f
 LED_ALL_OFF=0x00
 BLINK_SECONDS=0.2
+GIT_PULL_TIMEOUT=300
 
 # Bookworm mounts the boot partition at /boot/firmware; older OSes at /boot.
 # Must match _STAY_AWAKE_SENTINELS in src/weatherdisplay/app.py.
@@ -50,17 +58,44 @@ blink() {
   i2cset -y "$I2C_BUS" "$I2C_ADDR" "$REG_WRITE_ENABLE" 0x00 2>/dev/null || true
 }
 
+# Starts the update service without waiting for it to finish. If a run is
+# already in flight, the start request merges with it (oneshot semantics)
+# instead of queueing a second update.
+start_update() {
+  systemctl start --no-block "$SERVICE"
+}
+
+# Pulls the repo as its owning user so .git never collects root-owned files.
+git_pull() {
+  local owner
+  owner="$(stat -c %U "$REPO_DIR")"
+  timeout "$GIT_PULL_TIMEOUT" \
+    runuser -u "$owner" -- git -C "$REPO_DIR" pull --ff-only
+}
+
 case "${1:-}" in
+  single)
+    start_update
+    blink 1
+    ;;
   double)
-    touch "$(sentinel_path)"
-    blink 3
+    sentinel="$(sentinel_path)"
+    if [[ -e "$sentinel" ]]; then
+      rm -f "$sentinel"
+      blink 3
+    else
+      touch "$sentinel"
+      blink 2
+    fi
     ;;
   long)
-    rm -f "$(sentinel_path)"
-    blink 5
+    blink 4
+    git_pull || echo "git pull failed; starting the update anyway" >&2
+    start_update
+    blink 1
     ;;
   *)
-    echo "usage: $0 {double|long}" >&2
+    echo "usage: $0 {single|double|long}" >&2
     exit 64
     ;;
 esac

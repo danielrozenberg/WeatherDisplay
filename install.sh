@@ -237,11 +237,11 @@ setup_pisugar_button() {
   chmod +x "$BUTTON_SCRIPT"
 
   # set_button_* commands persist into pisugar-server's config, so this
-  # survives reboots; re-applying the same values is a no-op. Single tap is
-  # explicitly disabled so it does nothing.
+  # survives reboots; re-applying the same values is a no-op.
   local cmd reply failed=0
   for cmd in \
-    "set_button_enable single 0" \
+    "set_button_shell single ${BUTTON_SCRIPT} single" \
+    "set_button_enable single 1" \
     "set_button_shell double ${BUTTON_SCRIPT} double" \
     "set_button_enable double 1" \
     "set_button_shell long ${BUTTON_SCRIPT} long" \
@@ -253,7 +253,7 @@ setup_pisugar_button() {
     fi
   done
   if [[ "$failed" -eq 0 ]]; then
-    ok "custom button set: double tap keeps the Pi awake, long tap resumes auto-shutdown"
+    ok "custom button set: single tap updates, double tap toggles stay-awake, long tap pulls + updates"
   fi
 }
 
@@ -312,10 +312,7 @@ main() {
     echo "  3. Watch logs:            journalctl -u ${SERVICE_NAME} -f"
     echo "  4. Re-enable shutdown in config when you are happy."
     echo
-    echo "Maintenance: 'sudo touch /boot/firmware/weatherdisplay-stayawake' keeps"
-    echo "the Pi awake after an update so you can SSH in. The PiSugar custom"
-    echo "button does the same: double tap creates the sentinel (LEDs blink 3x),"
-    echo "long tap removes it (LEDs blink 5x)."
+    echo "See README.md for maintenance tips"
   fi
 }
 
