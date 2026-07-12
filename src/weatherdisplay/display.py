@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import logging
 import pathlib
+import time
 
 from PIL import Image
 from PIL import ImageDraw
@@ -40,11 +41,22 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 )
 
+# A Spectra-6 refresh can outlast the inky driver's 32s internal busy-wait
+# (cold panels refresh slowly), so `device.show()` may return while the panel
+# is still drawing. We poll the panel's BUSY line ourselves until the refresh
+# completes; if the line cannot be read, we sleep a flat fallback instead.
+_BUSY_TIMEOUT_SECONDS = 120.0
+_BUSY_POLL_INTERVAL_SECONDS = 0.2
+_BUSY_FALLBACK_SECONDS = 30.0
+
 
 def show(
     png: bytes, saturation: float, *, last_image_path: pathlib.Path
 ) -> None:
     """Pushes a rendered PNG to the panel and saves it as last-good.
+
+    Blocks until the panel reports the refresh has finished (or a fallback
+    wait elapses), so it is safe to cut power soon after this returns.
 
     Args:
       png: PNG image bytes at the native panel resolution.
@@ -151,6 +163,53 @@ def _push(image: Image.Image, saturation: float) -> None:
         device.show()
     except Exception as exc:
         raise errors.DisplayError(f"could not update the panel: {exc}") from exc
+    # The image is on its way to the panel at this point, so a wait failure is
+    # only logged — it must not trigger the error-screen path.
+    _wait_until_idle(device)
+
+
+def _wait_until_idle(device: object) -> None:
+    """Blocks until the panel's BUSY line reports the refresh has finished.
+
+    Reads the same BUSY GPIO line the driver's internal busy-wait polls (via
+    private attributes, hence the defensive ``getattr``). If the line cannot
+    be read, sleeps ``_BUSY_FALLBACK_SECONDS`` blind so the caller can still
+    assume the refresh is over when this returns.
+    """
+    gpio = getattr(device, "_gpio", None)
+    busy_pin = getattr(device, "busy_pin", None)
+    try:
+        from gpiod import line  # type: ignore[import-not-found]
+
+        idle = line.Value.ACTIVE
+    except ImportError:
+        idle = None
+    if gpio is None or busy_pin is None or idle is None:
+        _log.warning(
+            "cannot read the panel BUSY line; sleeping %.0fs instead",
+            _BUSY_FALLBACK_SECONDS,
+        )
+        time.sleep(_BUSY_FALLBACK_SECONDS)
+        return
+
+    start = time.monotonic()
+    deadline = start + _BUSY_TIMEOUT_SECONDS
+    try:
+        while gpio.get_value(busy_pin) != idle:
+            if time.monotonic() > deadline:
+                _log.warning(
+                    "panel still busy after %.0fs; giving up the wait",
+                    _BUSY_TIMEOUT_SECONDS,
+                )
+                return
+            time.sleep(_BUSY_POLL_INTERVAL_SECONDS)
+    except OSError as exc:
+        _log.warning("could not poll the panel BUSY line: %s", exc)
+        time.sleep(_BUSY_FALLBACK_SECONDS)
+        return
+    waited = time.monotonic() - start
+    if waited >= _BUSY_POLL_INTERVAL_SECONDS:
+        _log.info("panel stayed busy for %.1fs after show()", waited)
 
 
 def _save_last(image: Image.Image, path: pathlib.Path) -> None:

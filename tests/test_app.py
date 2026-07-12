@@ -139,7 +139,7 @@ def test_maybe_shutdown_waits_for_panel_before_poweroff(
 
     app._maybe_shutdown(cfg, logging.getLogger("test"))
 
-    assert delays == [30.0]
+    assert delays == [5.0]
     assert powered_off == [True]
 
 

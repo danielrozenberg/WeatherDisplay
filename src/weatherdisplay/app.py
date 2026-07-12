@@ -37,9 +37,10 @@ _STAY_AWAKE_SENTINELS = (
 _RETRY_BASE_DELAY = 2.0
 _RETRY_MAX_DELAY = 30.0
 
-# Grace period before power-off so the Inky panel finishes its refresh cycle;
-# cutting power mid-update leaves the screen stuck half-drawn.
-_SHUTDOWN_DELAY_SECONDS = 30.0
+# Small grace period before power-off. display.show blocks until the panel
+# reports its refresh has finished, so this only cushions the last driver
+# commands settling before the rail drops.
+_SHUTDOWN_DELAY_SECONDS = 5.0
 
 
 def default_state_dir() -> pathlib.Path:
