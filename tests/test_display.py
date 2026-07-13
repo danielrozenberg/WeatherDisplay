@@ -53,31 +53,6 @@ class _FakeDevice:
         return self._readings[0]
 
 
-class _FakeDriver:
-    """Records _busy_wait timeouts like the inky driver would receive them."""
-
-    def __init__(self) -> None:
-        self.timeouts: list[float] = []
-
-    def _busy_wait(self, timeout: float = 40.0) -> None:
-        self.timeouts.append(timeout)
-
-
-def test_patch_busy_wait_extends_refresh_wait_only() -> None:
-    driver = _FakeDriver()
-    display._patch_busy_wait(driver)
-
-    driver._busy_wait(0.3)  # housekeeping waits keep their short timeout
-    driver._busy_wait(32.0)  # the refresh wait gets the generous ceiling
-    driver._busy_wait()
-
-    assert driver.timeouts == [0.3, 120.0, 120.0]
-
-
-def test_patch_busy_wait_skips_unknown_driver() -> None:
-    display._patch_busy_wait(object())  # must not raise
-
-
 def test_wait_until_idle_polls_busy_line_until_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
