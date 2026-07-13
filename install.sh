@@ -258,7 +258,43 @@ setup_pisugar_button() {
 }
 
 # --------------------------------------------------------------------------- #
-# 8. Install and enable the systemd service
+# 8. Make boot wait for a real NTP time sync (bounded)
+# --------------------------------------------------------------------------- #
+# Until NTP syncs, the boot clock holds the previous shutdown's time.
+# systemd-time-wait-sync holds back time-sync.target until the clock is
+# synced.
+TIME_SYNC_DROPIN_DIR="/etc/systemd/system/systemd-time-wait-sync.service.d"
+TIME_SYNC_DROPIN="${TIME_SYNC_DROPIN_DIR}/10-weatherdisplay-timeout.conf"
+
+setup_time_sync_wait() {
+  info "Configuring boot to wait for NTP time sync"
+
+  local rendered
+  rendered="$(mktemp)"
+  printf '[Service]\nTimeoutStartSec=180\n' > "$rendered"
+  if [[ -f "$TIME_SYNC_DROPIN" ]] && sudo cmp -s "$rendered" "$TIME_SYNC_DROPIN"; then
+    ok "time-wait-sync timeout drop-in already up to date"
+    rm -f "$rendered"
+  else
+    sudo mkdir -p "$TIME_SYNC_DROPIN_DIR"
+    sudo cp "$rendered" "$TIME_SYNC_DROPIN"
+    rm -f "$rendered"
+    sudo systemctl daemon-reload
+    ok "installed ${TIME_SYNC_DROPIN}"
+  fi
+
+  if [[ "$(sudo systemctl is-enabled systemd-time-wait-sync.service 2>/dev/null)" == "enabled" ]]; then
+    ok "systemd-time-wait-sync already enabled"
+  else
+    sudo systemctl enable systemd-time-wait-sync.service >/dev/null 2>&1 \
+      || die "could not enable systemd-time-wait-sync.service" \
+             "run 'sudo systemctl enable systemd-time-wait-sync.service'"
+    ok "enabled systemd-time-wait-sync.service"
+  fi
+}
+
+# --------------------------------------------------------------------------- #
+# 9. Install and enable the systemd service
 # --------------------------------------------------------------------------- #
 install_service() {
   info "Installing systemd service"
@@ -299,6 +335,7 @@ main() {
   if [[ "$IS_PI" -eq 1 ]]; then
     check_pisugar
     setup_pisugar_button
+    setup_time_sync_wait
     install_service
   fi
   echo

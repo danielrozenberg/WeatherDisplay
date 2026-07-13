@@ -10,7 +10,9 @@
 
 [Unit]
 Description=WeatherDisplay e-ink weather update
-Wants=network-online.target
+# time-sync.target is only reached once the clock is NTP-synced (install.sh
+# enables systemd-time-wait-sync, with a bounded timeout).
+Wants=network-online.target time-sync.target
 After=network-online.target time-sync.target
 
 [Service]
